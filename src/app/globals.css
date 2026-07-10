@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: #faf8f3;
+  color: #161c29;
+  overscroll-behavior-y: none;
+}
+
+/* Ensure every input/select/textarea renders at >=16px so Safari on iOS
+   does not automatically zoom the page when a field is focused. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Visible, high-contrast focus states everywhere (do not rely on color alone). */
+:focus-visible {
+  outline: 2px solid #1f7a84;
+  outline-offset: 2px;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------- */
+/* Print stylesheet                                                       */
+/* --------------------------------------------------------------------- */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 12mm;
+  }
+}

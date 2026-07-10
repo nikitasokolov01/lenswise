@@ -1,0 +1,143 @@
+import { z } from "zod";
+
+/**
+ * Zod schemas used to defensively validate pricing configuration that comes
+ * back out of LocalStorage (or, in the future, a network response from a
+ * Supabase-backed repository). If validation fails we fall back to the
+ * seeded demonstration defaults rather than crashing the app.
+ */
+
+const lensTypeKeySchema = z.enum([
+  "single_vision",
+  "progressive",
+  "bifocal",
+  "lens_only",
+  "frame_only",
+]);
+
+const lensTypeConfigSchema = z.object({
+  id: z.string().min(1),
+  key: lensTypeKeySchema,
+  name: z.string().min(1),
+  description: z.string(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const progressiveDesignConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const materialPriceSchema = z.object({
+  id: z.string().min(1),
+  lensTypeId: z.string().min(1),
+  progressiveDesignId: z.string().min(1).optional(),
+  priceCents: z.number().int(),
+  insuranceCopayCents: z.number().int().optional(),
+});
+
+const materialConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  shortDescription: z.string(),
+  prices: z.array(materialPriceSchema),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const coatingConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  retailPriceCents: z.number().int(),
+  priceByLensType: z.record(z.string(), z.number().int()).optional(),
+  insuranceCopayCents: z.number().int().optional(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const photochromicProductKeySchema = z.enum([
+  "none",
+  "house_gray",
+  "house_brown",
+  "transitions_gen_s",
+]);
+
+const photochromicProductConfigSchema = z.object({
+  id: z.string().min(1),
+  key: photochromicProductKeySchema,
+  name: z.string().min(1),
+  description: z.string(),
+  retailPriceCents: z.number().int(),
+  insuranceCopayCents: z.number().int().optional(),
+  requiresColorSelection: z.boolean(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const photochromicColorConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  isStandardColor: z.boolean(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const defaultAllowancesSchema = z.object({
+  frameAllowanceCents: z.number().int(),
+  lensAllowanceCents: z.number().int(),
+  additionalCreditCents: z.number().int(),
+});
+
+const defaultCopaysSchema = z.object({
+  frameCopayCents: z.number().int(),
+  lensCopayCents: z.number().int(),
+  coatingCopayCents: z.number().int(),
+  photochromicCopayCents: z.number().int(),
+  otherCopayCents: z.number().int(),
+});
+
+export const pricingConfigurationSchema = z.object({
+  schemaVersion: z.number(),
+  officeName: z.string().min(1),
+  disclaimerText: z.string(),
+  lensTypes: z.array(lensTypeConfigSchema),
+  progressiveDesigns: z.array(progressiveDesignConfigSchema),
+  materials: z.array(materialConfigSchema),
+  coatings: z.array(coatingConfigSchema),
+  photochromicProducts: z.array(photochromicProductConfigSchema),
+  photochromicColors: z.array(photochromicColorConfigSchema),
+  transitionsSurfacingFeeCents: z.number().int(),
+  defaultAllowances: defaultAllowancesSchema,
+  defaultCopays: defaultCopaysSchema,
+  updatedAt: z.string(),
+});
+
+export type PricingConfigurationParseResult =
+  ReturnType<typeof pricingConfigurationSchema.safeParse>;
+
+/** Non-negative dollar amount typed into an admin/quote input, e.g. "45" or "45.99". */
+export const nonNegativeDollarStringSchema = z
+  .string()
+  .refine((value) => value.trim() === "" || !Number.isNaN(Number.parseFloat(value)), {
+    message: "Enter a valid amount.",
+  })
+  .refine((value) => value.trim() === "" || Number.parseFloat(value) >= 0, {
+    message: "Amount cannot be negative.",
+  });
+
+export const percentStringSchema = z
+  .string()
+  .refine((value) => value.trim() === "" || !Number.isNaN(Number.parseFloat(value)), {
+    message: "Enter a valid percentage.",
+  })
+  .refine(
+    (value) =>
+      value.trim() === "" ||
+      (Number.parseFloat(value) >= 0 && Number.parseFloat(value) <= 100),
+    { message: "Percentage must be between 0 and 100." }
+  );
