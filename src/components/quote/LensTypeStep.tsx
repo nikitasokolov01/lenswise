@@ -11,9 +11,18 @@ interface LensTypeStepProps {
   dispatch: Dispatch<QuoteAction>;
   lensTypes: LensTypeConfig[];
   progressiveDesigns: ProgressiveDesignConfig[];
+  disabled: boolean;
+  disabledReason: string;
 }
 
-export function LensTypeStep({ input, dispatch, lensTypes, progressiveDesigns }: LensTypeStepProps) {
+export function LensTypeStep({
+  input,
+  dispatch,
+  lensTypes,
+  progressiveDesigns,
+  disabled,
+  disabledReason,
+}: LensTypeStepProps) {
   const active = lensTypes.filter((lt) => lt.active).sort((a, b) => a.sortOrder - b.sortOrder);
   const activeDesigns = progressiveDesigns.filter((d) => d.active).sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -22,16 +31,17 @@ export function LensTypeStep({ input, dispatch, lensTypes, progressiveDesigns }:
 
   function selectLensType(lensType: LensTypeConfig) {
     dispatch({ type: "SET_LENS_TYPE", lensTypeId: lensType.id, isProgressive: lensType.key === "progressive" });
-    dispatch({ type: "SET_FRAME", field: "frameOnly", value: lensType.key === "frame_only" });
   }
 
   return (
-    <Card>
+    <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>2. Lens Type</CardTitle>
+        <CardTitle>3. Lens Type</CardTitle>
         <CardDescription>
-          Choose the lens type for this order. Lens type only determines which pricing options are available —
-          the price itself comes from the lens material chosen in the next step.
+          {disabled
+            ? disabledReason
+            : "Choose the lens type for this order. Lens type only determines which pricing options are " +
+              "available — the price itself comes from the lens material chosen in the next step."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -43,6 +53,7 @@ export function LensTypeStep({ input, dispatch, lensTypes, progressiveDesigns }:
               title={lensType.name}
               subtitle={lensType.description}
               checked={input.lensTypeId === lensType.id}
+              disabled={disabled}
               onChange={() => selectLensType(lensType)}
             />
           ))}
@@ -64,6 +75,7 @@ export function LensTypeStep({ input, dispatch, lensTypes, progressiveDesigns }:
                     title={design.name}
                     subtitle={design.description}
                     checked={input.progressiveDesignId === design.id}
+                    disabled={disabled}
                     onChange={() => dispatch({ type: "SET_PROGRESSIVE_DESIGN", progressiveDesignId: design.id })}
                   />
                 ))}

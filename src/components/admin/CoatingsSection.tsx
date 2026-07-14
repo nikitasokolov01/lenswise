@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { MoneyField } from "@/components/ui/money-field";
 import { EditableList } from "@/components/admin/EditableList";
+import { CoverageOverrideField } from "@/components/admin/CoverageOverrideField";
 import { generateId } from "@/lib/id";
 import type { CoatingConfig } from "@/lib/types";
 
@@ -50,16 +51,12 @@ export function CoatingsSection({
                   onChangeCents={(cents) => update({ retailPriceCents: cents })}
                 />
               </div>
-              <div>
-                <Label htmlFor={`${item.id}-copay`}>
-                  Insurance copay <span className="font-normal text-navy-400">(optional default)</span>
-                </Label>
-                <MoneyField
-                  id={`${item.id}-copay`}
-                  valueCents={item.insuranceCopayCents ?? 0}
-                  onChangeCents={(cents) => update({ insuranceCopayCents: cents })}
-                />
-              </div>
+              <CoverageOverrideField
+                id={`${item.id}-coverage`}
+                label="Insurance coverage (optional default override)"
+                override={item.insuranceCoverage}
+                onChange={(insuranceCoverage) => update({ insuranceCoverage })}
+              />
               <div className="sm:col-span-2">
                 <Label htmlFor={`${item.id}-description`}>Description</Label>
                 <Input

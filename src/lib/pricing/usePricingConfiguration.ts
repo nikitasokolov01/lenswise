@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PricingConfiguration } from "@/lib/types";
 import { pricingRepository } from "@/lib/pricing/LocalStoragePricingRepository";
+import { LOCAL_STORAGE_PRICING_KEY } from "@/lib/constants";
 
 interface UsePricingConfigurationResult {
   configuration: PricingConfiguration | null;
@@ -31,6 +32,23 @@ export function usePricingConfiguration(): UsePricingConfigurationResult {
 
   useEffect(() => {
     reload();
+  }, [reload]);
+
+  // Keep every open surface (e.g. the Quote Builder in one tab and Admin
+  // Pricing in another) on the single active configuration: when Admin saves
+  // new pricing, the browser fires a `storage` event in other tabs, so we
+  // reload the active configuration immediately rather than waiting for a
+  // navigation or refresh. (The `storage` event never fires in the same tab
+  // that made the change; that tab already updated its own state via `save`.)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function handleStorage(event: StorageEvent) {
+      if (event.key === LOCAL_STORAGE_PRICING_KEY) {
+        reload();
+      }
+    }
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [reload]);
 
   const save = useCallback(async (config: PricingConfiguration) => {

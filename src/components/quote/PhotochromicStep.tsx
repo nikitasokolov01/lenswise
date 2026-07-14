@@ -21,6 +21,7 @@ interface PhotochromicStepProps {
   lensType: LensTypeConfig | undefined;
   transitionsSurfacingFeeCents: number;
   disabled: boolean;
+  disabledReason: string;
 }
 
 export function PhotochromicStep({
@@ -31,6 +32,7 @@ export function PhotochromicStep({
   lensType,
   transitionsSurfacingFeeCents,
   disabled,
+  disabledReason,
 }: PhotochromicStepProps) {
   const active = products.filter((p) => p.active).sort((a, b) => a.sortOrder - b.sortOrder);
   const activeColors = colors.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -48,10 +50,8 @@ export function PhotochromicStep({
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>5. Photochromic</CardTitle>
-        <CardDescription>
-          {disabled ? "Not applicable for a frame-only order." : "Choose a light-adaptive lens option."}
-        </CardDescription>
+        <CardTitle>6. Photochromic</CardTitle>
+        <CardDescription>{disabled ? disabledReason : "Choose a light-adaptive lens option."}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <RadioCardGroup legend="Photochromic product">

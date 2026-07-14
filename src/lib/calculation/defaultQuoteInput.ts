@@ -6,22 +6,23 @@ import type { PricingConfiguration, QuoteInput } from "@/lib/types";
  * "Reset quote". Default copay/allowance values are pre-filled from the
  * office's configured defaults so the optician has less to re-type, but
  * every value remains fully editable per-quote.
+ *
+ * Order type defaults to "complete_pair". Lens configuration (lens type,
+ * progressive design, material, coating, photochromic) starts fully unset
+ * because it stays locked until a valid prescription is applied. Prescription
+ * starts unapplied (null) — it is never persisted between quotes or between
+ * page loads.
  */
 export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInput {
-  const firstActiveLensType = config.lensTypes
-    .filter((item) => item.active)
-    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
-
   return {
+    orderType: "complete_pair",
+    usage: null,
     frame: {
       retailPriceCents: 0,
-      frameOnly: false,
       customDescription: "",
-      insuranceAllowanceCents: config.defaultAllowances.frameAllowanceCents,
-      copayCents: config.defaultCopays.frameCopayCents,
       manualAdjustmentCents: 0,
     },
-    lensTypeId: firstActiveLensType?.id ?? null,
+    lensTypeId: null,
     progressiveDesignId: null,
     materialId: null,
     coatingId: null,
@@ -29,21 +30,24 @@ export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInpu
       productId: null,
       colorId: null,
     },
+    prescription: null,
     insurance: {
       mode: "retail",
-      allowances: {
-        lensAllowanceCents: config.defaultAllowances.lensAllowanceCents,
-        additionalCreditCents: config.defaultAllowances.additionalCreditCents,
-      },
-      copays: {
-        lensCopayCents: config.defaultCopays.lensCopayCents,
-        coatingCopayCents: config.defaultCopays.coatingCopayCents,
-        photochromicCopayCents: config.defaultCopays.photochromicCopayCents,
-        otherCopayCents: config.defaultCopays.otherCopayCents,
-        frameCoverage: "copay",
-        lensCoverage: "copay",
-        coatingCoverage: "copay",
-        photochromicCoverage: "copay",
+      // Each CoverageMethod field is copied into a fresh object (not the
+      // same reference held by `config`) so editing this quote's coverage
+      // can never mutate the office's stored default configuration.
+      coverage: {
+        frameCoverage: { ...config.defaultInsuranceCoverage.frameCoverage },
+        frameAllowanceCents: config.defaultInsuranceCoverage.frameAllowanceCents,
+        lensCoverage: { ...config.defaultInsuranceCoverage.lensCoverage },
+        lensAllowanceCents: config.defaultInsuranceCoverage.lensAllowanceCents,
+        materialCoverage: { ...config.defaultInsuranceCoverage.materialCoverage },
+        coatingCoverage: { ...config.defaultInsuranceCoverage.coatingCoverage },
+        photochromicCoverage: { ...config.defaultInsuranceCoverage.photochromicCoverage },
+        otherCopayCents: config.defaultInsuranceCoverage.otherCopayCents,
+        additionalAllowanceCents: config.defaultInsuranceCoverage.additionalAllowanceCents,
+        otherChargeCents: config.defaultInsuranceCoverage.otherChargeCents,
+        note: "",
       },
       manualOverride: {
         finalPatientResponsibilityCents: 0,

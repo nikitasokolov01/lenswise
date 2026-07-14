@@ -13,18 +13,17 @@ interface CoatingStepProps {
   coatings: CoatingConfig[];
   lensType: LensTypeConfig | undefined;
   disabled: boolean;
+  disabledReason: string;
 }
 
-export function CoatingStep({ input, dispatch, coatings, lensType, disabled }: CoatingStepProps) {
+export function CoatingStep({ input, dispatch, coatings, lensType, disabled, disabledReason }: CoatingStepProps) {
   const active = coatings.filter((c) => c.active).sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>4. Anti-Reflective Coating</CardTitle>
-        <CardDescription>
-          {disabled ? "Not applicable for a frame-only order." : "Choose an anti-reflective coating."}
-        </CardDescription>
+        <CardTitle>5. Anti-Reflective Coating</CardTitle>
+        <CardDescription>{disabled ? disabledReason : "Choose an anti-reflective coating."}</CardDescription>
       </CardHeader>
       <CardContent>
         <RadioCardGroup legend="Anti-reflective coating">

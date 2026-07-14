@@ -1,6 +1,7 @@
 import type { PricingConfiguration } from "@/lib/types";
 import type { PricingRepository } from "@/lib/pricing/PricingRepository";
 import { createDefaultConfiguration } from "@/lib/pricing/seedConfiguration";
+import { migratePricingConfiguration } from "@/lib/pricing/migratePricingConfiguration";
 import { pricingConfigurationSchema } from "@/lib/validation";
 import { LOCAL_STORAGE_PRICING_KEY } from "@/lib/constants";
 
@@ -35,13 +36,19 @@ export class LocalStoragePricingRepository implements PricingRepository {
       }
 
       const parsedJson = JSON.parse(raw);
-      const result = pricingConfigurationSchema.safeParse(parsedJson);
+      const migratedJson = migratePricingConfiguration(parsedJson);
+      const result = pricingConfigurationSchema.safeParse(migratedJson);
       if (!result.success) {
         console.warn(
-          "Stored pricing configuration failed validation. Falling back to demonstration defaults.",
+          "Stored pricing configuration failed validation after migration. Falling back to demonstration defaults.",
           result.error.flatten()
         );
         return createDefaultConfiguration();
+      }
+
+      // Persist the migrated shape so future loads skip re-migrating.
+      if (migratedJson !== parsedJson) {
+        await this.saveConfiguration(result.data as PricingConfiguration);
       }
 
       return result.data as PricingConfiguration;

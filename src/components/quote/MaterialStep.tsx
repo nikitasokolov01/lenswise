@@ -14,9 +14,10 @@ interface MaterialStepProps {
   materials: MaterialConfig[];
   lensType: LensTypeConfig | undefined;
   disabled: boolean;
+  disabledReason: string;
 }
 
-export function MaterialStep({ input, dispatch, materials, lensType, disabled }: MaterialStepProps) {
+export function MaterialStep({ input, dispatch, materials, lensType, disabled, disabledReason }: MaterialStepProps) {
   const active = materials.filter((m) => m.active).sort((a, b) => a.sortOrder - b.sortOrder);
   const isProgressive = lensType?.key === "progressive";
   const needsDesignFirst = isProgressive && !input.progressiveDesignId;
@@ -25,14 +26,14 @@ export function MaterialStep({ input, dispatch, materials, lensType, disabled }:
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>3. Lens Material</CardTitle>
+        <CardTitle>4. Lens Material</CardTitle>
         <CardDescription>
           {disabled
-            ? "Not applicable for a frame-only order."
+            ? disabledReason
             : needsDesignFirst
-              ? "Choose a progressive design in step 2 first to see pricing."
+              ? "Choose a progressive design in step 3 first to see pricing."
               : !lensType
-                ? "Choose a lens type in step 2 first to see pricing."
+                ? "Choose a lens type in step 3 first to see pricing."
                 : "Choose a lens material. The price shown is the full price for this lens type and material."}
         </CardDescription>
       </CardHeader>

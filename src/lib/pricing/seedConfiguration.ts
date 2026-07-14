@@ -1,5 +1,6 @@
 import type {
   CoatingConfig,
+  CoverageMethod,
   LensTypeConfig,
   MaterialConfig,
   MaterialPrice,
@@ -8,6 +9,11 @@ import type {
   PricingConfiguration,
   ProgressiveDesignConfig,
 } from "@/lib/types";
+
+/** Shorthand for the common case of a fixed-dollar copay coverage method. */
+function copay(amountCents: number): CoverageMethod {
+  return { type: "copay", amountCents };
+}
 
 /**
  * Seed / "restore defaults" pricing configuration.
@@ -19,8 +25,16 @@ import type {
  * industry-standard retail pricing.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 8;
 
+/**
+ * Lens type is purely "what optical design is this lens" (Single Vision /
+ * Progressive / Bifocal). Whether a frame or lenses are on the order at all
+ * is a separate, top-level "order type" choice (see OrderType in types.ts)
+ * made in the Frame step — Lens Only and Frame Only are NOT lens types, so
+ * a Lens Only order still picks a real lens type + material here, just like
+ * a Complete Pair order, only without a frame charge.
+ */
 const lensTypes: LensTypeConfig[] = [
   {
     id: "lens-type-single-vision",
@@ -46,28 +60,11 @@ const lensTypes: LensTypeConfig[] = [
     active: true,
     sortOrder: 2,
   },
-  {
-    id: "lens-type-lens-only",
-    key: "lens_only",
-    name: "Lens Only",
-    description: "New lenses only, e.g. into a patient-owned frame. No frame charge.",
-    active: true,
-    sortOrder: 3,
-  },
-  {
-    id: "lens-type-frame-only",
-    key: "frame_only",
-    name: "Frame Only",
-    description: "Frame purchase only. No lenses on this order.",
-    active: true,
-    sortOrder: 4,
-  },
 ];
 
 const LENS_TYPE_SINGLE_VISION = "lens-type-single-vision";
 const LENS_TYPE_PROGRESSIVE = "lens-type-progressive";
 const LENS_TYPE_BIFOCAL = "lens-type-bifocal";
-const LENS_TYPE_LENS_ONLY = "lens-type-lens-only";
 
 const progressiveDesigns: ProgressiveDesignConfig[] = [
   {
@@ -99,14 +96,15 @@ const PROGRESSIVE_ELITE = "progressive-design-elite";
 
 /**
  * Builds the full MaterialPrice matrix for one material: a flat price for
- * Single Vision, Bifocal, and Lens Only, plus one price per progressive
- * design. This is demonstration data only — see the module-level comment.
+ * Single Vision and Bifocal, plus one price per progressive design. This is
+ * demonstration data only — see the module-level comment. A Lens Only order
+ * reuses these exact same prices (it picks a real lens type + material just
+ * like Complete Pair); there is no separate "Lens Only" price bucket.
  */
 function buildMaterialPrices(options: {
   materialSlug: string;
   singleVisionCents: number;
   bifocalCents: number;
-  lensOnlyCents: number;
   progressiveStandardCents: number;
   progressivePremiumCents: number;
   progressiveEliteCents: number;
@@ -116,52 +114,46 @@ function buildMaterialPrices(options: {
     materialSlug,
     singleVisionCents,
     bifocalCents,
-    lensOnlyCents,
     progressiveStandardCents,
     progressivePremiumCents,
     progressiveEliteCents,
     insuranceCopayCents,
   } = options;
+  const insuranceCoverage = copay(insuranceCopayCents);
 
   return [
     {
       id: `price-${materialSlug}-single-vision`,
       lensTypeId: LENS_TYPE_SINGLE_VISION,
       priceCents: singleVisionCents,
-      insuranceCopayCents,
+      insuranceCoverage,
     },
     {
       id: `price-${materialSlug}-bifocal`,
       lensTypeId: LENS_TYPE_BIFOCAL,
       priceCents: bifocalCents,
-      insuranceCopayCents,
-    },
-    {
-      id: `price-${materialSlug}-lens-only`,
-      lensTypeId: LENS_TYPE_LENS_ONLY,
-      priceCents: lensOnlyCents,
-      insuranceCopayCents,
+      insuranceCoverage,
     },
     {
       id: `price-${materialSlug}-progressive-standard`,
       lensTypeId: LENS_TYPE_PROGRESSIVE,
       progressiveDesignId: PROGRESSIVE_STANDARD,
       priceCents: progressiveStandardCents,
-      insuranceCopayCents,
+      insuranceCoverage,
     },
     {
       id: `price-${materialSlug}-progressive-premium`,
       lensTypeId: LENS_TYPE_PROGRESSIVE,
       progressiveDesignId: PROGRESSIVE_PREMIUM,
       priceCents: progressivePremiumCents,
-      insuranceCopayCents,
+      insuranceCoverage,
     },
     {
       id: `price-${materialSlug}-progressive-elite`,
       lensTypeId: LENS_TYPE_PROGRESSIVE,
       progressiveDesignId: PROGRESSIVE_ELITE,
       priceCents: progressiveEliteCents,
-      insuranceCopayCents,
+      insuranceCoverage,
     },
   ];
 }
@@ -173,11 +165,13 @@ const materials: MaterialConfig[] = [
     shortDescription: "Standard plastic lens material.",
     active: true,
     sortOrder: 0,
+    // CR-39 edges/surfaces well at high-minus cylinder without extra lab work.
+    appliesToHighCylinderSurfacing: false,
+    isHighIndex: false,
     prices: buildMaterialPrices({
       materialSlug: "cr39",
       singleVisionCents: 6500,
       bifocalCents: 14500,
-      lensOnlyCents: 6500,
       progressiveStandardCents: 22000,
       progressivePremiumCents: 30000,
       progressiveEliteCents: 38000,
@@ -190,11 +184,14 @@ const materials: MaterialConfig[] = [
     shortDescription: "Thinner and significantly more impact-resistant than CR-39.",
     active: true,
     sortOrder: 1,
+    // Polycarbonate requires custom surfacing to edge cleanly at high-minus
+    // cylinder (and is not high index, so it takes the prescription fee).
+    appliesToHighCylinderSurfacing: true,
+    isHighIndex: false,
     prices: buildMaterialPrices({
       materialSlug: "polycarbonate",
       singleVisionCents: 10000,
       bifocalCents: 18500,
-      lensOnlyCents: 10000,
       progressiveStandardCents: 26500,
       progressivePremiumCents: 34500,
       progressiveEliteCents: 42500,
@@ -207,11 +204,15 @@ const materials: MaterialConfig[] = [
     shortDescription: "Thinner and lighter, recommended for stronger prescriptions.",
     active: true,
     sortOrder: 2,
+    // High-index blanks need extra lab work, but the office handles them with
+    // a different process, so they are EXCLUDED from the prescription-based
+    // high-cylinder surfacing fee via isHighIndex (see rules.ts).
+    appliesToHighCylinderSurfacing: true,
+    isHighIndex: true,
     prices: buildMaterialPrices({
       materialSlug: "hi167",
       singleVisionCents: 14500,
       bifocalCents: 23500,
-      lensOnlyCents: 14500,
       progressiveStandardCents: 32000,
       progressivePremiumCents: 40000,
       progressiveEliteCents: 48000,
@@ -234,7 +235,7 @@ const coatings: CoatingConfig[] = [
     name: "Stock AR",
     description: "Basic anti-reflective coating.",
     retailPriceCents: 5000,
-    insuranceCopayCents: 2000,
+    insuranceCoverage: copay(2000),
     active: true,
     sortOrder: 1,
   },
@@ -243,7 +244,7 @@ const coatings: CoatingConfig[] = [
     name: "SharpView",
     description: "Mid-tier anti-reflective coating with smudge resistance.",
     retailPriceCents: 8500,
-    insuranceCopayCents: 3000,
+    insuranceCoverage: copay(3000),
     active: true,
     sortOrder: 2,
   },
@@ -252,7 +253,7 @@ const coatings: CoatingConfig[] = [
     name: "Crizal Rock",
     description: "Premium scratch-resistant anti-reflective coating.",
     retailPriceCents: 13500,
-    insuranceCopayCents: 4000,
+    insuranceCoverage: copay(4000),
     active: true,
     sortOrder: 3,
   },
@@ -261,7 +262,7 @@ const coatings: CoatingConfig[] = [
     name: "Crizal Sapphire",
     description: "Premium anti-reflective coating with reduced residual reflection.",
     retailPriceCents: 15000,
-    insuranceCopayCents: 4000,
+    insuranceCoverage: copay(4000),
     active: true,
     sortOrder: 4,
   },
@@ -270,7 +271,7 @@ const coatings: CoatingConfig[] = [
     name: "Crizal Prevencia",
     description: "Premium anti-reflective coating that also filters some blue-violet light.",
     retailPriceCents: 17500,
-    insuranceCopayCents: 4500,
+    insuranceCoverage: copay(4500),
     active: true,
     sortOrder: 5,
   },
@@ -293,7 +294,7 @@ const photochromicProducts: PhotochromicProductConfig[] = [
     name: "House Photochromic Gray",
     description: "In-house light-adaptive lens tint, gray.",
     retailPriceCents: 7500,
-    insuranceCopayCents: 2000,
+    insuranceCoverage: copay(2000),
     requiresColorSelection: false,
     active: true,
     sortOrder: 1,
@@ -304,7 +305,7 @@ const photochromicProducts: PhotochromicProductConfig[] = [
     name: "House Photochromic Brown",
     description: "In-house light-adaptive lens tint, brown.",
     retailPriceCents: 7500,
-    insuranceCopayCents: 2000,
+    insuranceCoverage: copay(2000),
     requiresColorSelection: false,
     active: true,
     sortOrder: 2,
@@ -315,7 +316,7 @@ const photochromicProducts: PhotochromicProductConfig[] = [
     name: "Transitions Gen S",
     description: "Branded light-adaptive lens with a choice of colors.",
     retailPriceCents: 11000,
-    insuranceCopayCents: 2500,
+    insuranceCoverage: copay(2500),
     requiresColorSelection: true,
     active: true,
     sortOrder: 3,
@@ -339,6 +340,9 @@ export function createDefaultConfiguration(): PricingConfiguration {
     officeName: "Sample Optical Office",
     disclaimerText:
       "This is an estimate only and may be subject to insurance verification, plan-year benefit changes, and final prescription requirements.",
+    // Off by default: customer-facing quotes show generalized product names,
+    // never exact brands/technologies or progressive design names.
+    showExactTechnologyNamesOnCustomerQuotes: false,
     lensTypes: lensTypes.map((item) => ({ ...item })),
     progressiveDesigns: progressiveDesigns.map((item) => ({ ...item })),
     materials: materials.map((item) => ({ ...item, prices: item.prices.map((price) => ({ ...price })) })),
@@ -346,17 +350,26 @@ export function createDefaultConfiguration(): PricingConfiguration {
     photochromicProducts: photochromicProducts.map((item) => ({ ...item })),
     photochromicColors: photochromicColors.map((item) => ({ ...item })),
     transitionsSurfacingFeeCents: 3000,
-    defaultAllowances: {
+    highCylinderSurfacingFeeCents: 4500,
+    highCylinderThresholdDiopters: -2,
+    defaultInsuranceCoverage: {
+      // Sensible demonstration defaults: every category starts at Retail so a
+      // new quote shows real prices, and the optician opts specific categories
+      // into Copay/Covered as the patient's plan dictates. Frame at retail lets
+      // the frame allowance below offset it (patient pays any overage). A copay
+      // would instead REPLACE that category's retail cost — see resolveCategory
+      // in calculateQuote.ts. `materialCoverage` is retained only for backward
+      // compatibility; the lens+material price is governed by `lensCoverage`.
+      frameCoverage: { type: "retail" },
       frameAllowanceCents: 13000,
+      lensCoverage: { type: "retail" },
       lensAllowanceCents: 0,
-      additionalCreditCents: 0,
-    },
-    defaultCopays: {
-      frameCopayCents: 0,
-      lensCopayCents: 1000,
-      coatingCopayCents: 0,
-      photochromicCopayCents: 0,
+      materialCoverage: { type: "retail" },
+      coatingCoverage: { type: "retail" },
+      photochromicCoverage: { type: "retail" },
       otherCopayCents: 0,
+      additionalAllowanceCents: 0,
+      otherChargeCents: 0,
     },
     updatedAt: new Date(0).toISOString(),
   };

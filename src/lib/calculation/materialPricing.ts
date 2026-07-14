@@ -1,5 +1,5 @@
 import { generateId } from "@/lib/id";
-import type { LensTypeConfig, MaterialConfig, MaterialPrice } from "@/lib/types";
+import type { CoverageMethod, LensTypeConfig, MaterialConfig, MaterialPrice } from "@/lib/types";
 
 /**
  * Looks up the priced combination for a material given a lens type (and,
@@ -33,7 +33,7 @@ export function upsertMaterialPrice(
   material: MaterialConfig,
   lensTypeId: string,
   progressiveDesignId: string | null,
-  patch: Partial<Pick<MaterialPrice, "priceCents" | "insuranceCopayCents">>
+  patch: Partial<Pick<MaterialPrice, "priceCents">> & { insuranceCoverage?: CoverageMethod | undefined }
 ): MaterialPrice[] {
   const existingIndex = material.prices.findIndex(
     (price) =>
@@ -50,7 +50,6 @@ export function upsertMaterialPrice(
     lensTypeId,
     progressiveDesignId: progressiveDesignId ?? undefined,
     priceCents: 0,
-    insuranceCopayCents: 0,
     ...patch,
   };
   return [...material.prices, newEntry];

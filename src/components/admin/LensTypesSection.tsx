@@ -19,8 +19,10 @@ export function LensTypesSection({
       <CardHeader>
         <CardTitle>Lens Types</CardTitle>
         <CardDescription>
-          Single Vision, Progressive, Bifocal, Lens Only, and Frame Only. A lens type only determines which
-          pricing options are available — set actual prices per material in the Lens Materials section below.
+          Single Vision, Progressive, and Bifocal — the optical design of the lens. A lens type only determines
+          which pricing options are available — set actual prices per material in the Lens Materials section
+          below. Whether a frame and/or lenses are on the order (Complete Pair / Lens Only / Frame Only) is chosen
+          separately, in the Quote Builder&apos;s Frame step.
         </CardDescription>
       </CardHeader>
       <CardContent>

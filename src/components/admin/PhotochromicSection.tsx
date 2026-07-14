@@ -7,6 +7,7 @@ import { MoneyField } from "@/components/ui/money-field";
 import { CheckboxField } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { EditableList } from "@/components/admin/EditableList";
+import { CoverageOverrideField } from "@/components/admin/CoverageOverrideField";
 import { generateId } from "@/lib/id";
 import type { PhotochromicColorConfig, PhotochromicProductConfig } from "@/lib/types";
 
@@ -65,16 +66,12 @@ export function PhotochromicSection({
                       onChangeCents={(cents) => update({ retailPriceCents: cents })}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor={`${item.id}-copay`}>
-                      Insurance copay <span className="font-normal text-navy-400">(optional default)</span>
-                    </Label>
-                    <MoneyField
-                      id={`${item.id}-copay`}
-                      valueCents={item.insuranceCopayCents ?? 0}
-                      onChangeCents={(cents) => update({ insuranceCopayCents: cents })}
-                    />
-                  </div>
+                  <CoverageOverrideField
+                    id={`${item.id}-coverage`}
+                    label="Insurance coverage (optional default override)"
+                    override={item.insuranceCoverage}
+                    onChange={(insuranceCoverage) => update({ insuranceCoverage })}
+                  />
                   <div className="sm:col-span-2">
                     <Label htmlFor={`${item.id}-description`}>Description</Label>
                     <Input

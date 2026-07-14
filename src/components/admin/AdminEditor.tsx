@@ -92,8 +92,12 @@ export function AdminEditor() {
         <OfficeSettingsSection
           officeName={draft.officeName}
           disclaimerText={draft.disclaimerText}
+          showExactTechnologyNamesOnCustomerQuotes={draft.showExactTechnologyNamesOnCustomerQuotes}
           onChangeOfficeName={(value) => setDraft({ ...draft, officeName: value })}
           onChangeDisclaimerText={(value) => setDraft({ ...draft, disclaimerText: value })}
+          onChangeShowExactTechnologyNames={(value) =>
+            setDraft({ ...draft, showExactTechnologyNamesOnCustomerQuotes: value })
+          }
         />
 
         <LensTypesSection lensTypes={draft.lensTypes} onChange={(items) => setDraft({ ...draft, lensTypes: items })} />
@@ -122,10 +126,12 @@ export function AdminEditor() {
         />
 
         <FeesAndDefaultsSection
-          defaultAllowances={draft.defaultAllowances}
-          defaultCopays={draft.defaultCopays}
-          onChangeAllowances={(value) => setDraft({ ...draft, defaultAllowances: value })}
-          onChangeCopays={(value) => setDraft({ ...draft, defaultCopays: value })}
+          defaultInsuranceCoverage={draft.defaultInsuranceCoverage}
+          highCylinderSurfacingFeeCents={draft.highCylinderSurfacingFeeCents}
+          highCylinderThresholdDiopters={draft.highCylinderThresholdDiopters}
+          onChangeDefaultInsuranceCoverage={(value) => setDraft({ ...draft, defaultInsuranceCoverage: value })}
+          onChangeHighCylinderSurfacingFeeCents={(cents) => setDraft({ ...draft, highCylinderSurfacingFeeCents: cents })}
+          onChangeHighCylinderThresholdDiopters={(value) => setDraft({ ...draft, highCylinderThresholdDiopters: value })}
         />
       </div>
 

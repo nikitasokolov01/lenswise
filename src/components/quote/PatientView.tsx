@@ -4,11 +4,39 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCents } from "@/lib/money";
-import type { PricingConfiguration, QuoteCalculationResult } from "@/lib/types";
+import { formatUsageLabelForCustomer } from "@/lib/usageOptions";
+import type { InsuranceBreakdown, PricingConfiguration, QuoteCalculationResult, UsageKey } from "@/lib/types";
+
+/** Insurance lines to show a patient: their copays/charges, then insurance allowances/covered items. Only non-zero lines. */
+function patientInsuranceLines(b: InsuranceBreakdown): {
+  patient: Array<{ label: string; cents: number }>;
+  insurance: Array<{ label: string; cents: number }>;
+} {
+  return {
+    patient: [
+      { label: "Frame copay", cents: b.frameCopayCents },
+      { label: "Lens copay", cents: b.lensCopayCents },
+      { label: "Coating copay", cents: b.coatingCopayCents },
+      { label: "Photochromic copay", cents: b.photochromicCopayCents },
+      { label: "Other copay", cents: b.otherCopayCents },
+      { label: "Other charge", cents: b.otherChargeCents },
+    ].filter((line) => line.cents > 0),
+    insurance: [
+      { label: "Frame allowance", cents: b.frameAllowanceAppliedCents },
+      { label: "Lens allowance", cents: b.lensAllowanceAppliedCents },
+      { label: "Additional insurance credit", cents: b.additionalAllowanceAppliedCents },
+      { label: "Frame covered by insurance", cents: b.frameCoveredCents },
+      { label: "Lens covered by insurance", cents: b.lensCoveredCents },
+      { label: "Coating covered by insurance", cents: b.coatingCoveredCents },
+      { label: "Photochromic covered by insurance", cents: b.photochromicCoveredCents },
+    ].filter((line) => line.cents > 0),
+  };
+}
 
 interface PatientViewProps {
   result: QuoteCalculationResult;
   config: PricingConfiguration;
+  usage: UsageKey | null;
   onClose: () => void;
 }
 
@@ -20,7 +48,7 @@ interface PatientViewProps {
  * internal notes, technical configuration fields, or cost/markup data —
  * none of that data even flows into this component's props.
  */
-export function PatientView({ result, config, onClose }: PatientViewProps) {
+export function PatientView({ result, config, usage, onClose }: PatientViewProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -34,6 +62,11 @@ export function PatientView({ result, config, onClose }: PatientViewProps) {
 
   const priceableItems = result.lineItems.filter((li) => li.category !== "discount");
   const discountItems = result.lineItems.filter((li) => li.category === "discount");
+  const insuranceLines = result.insuranceBreakdown ? patientInsuranceLines(result.insuranceBreakdown) : null;
+  // Off by default: show generalized names and hide the material/technology
+  // description. When the office opts in, show the exact names instead.
+  const showExact = config.showExactTechnologyNamesOnCustomerQuotes;
+  const usageLabel = formatUsageLabelForCustomer(usage, showExact);
 
   return (
     <div
@@ -54,6 +87,11 @@ export function PatientView({ result, config, onClose }: PatientViewProps) {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-5 py-6 sm:px-8">
+        {usageLabel ? (
+          <p className="mb-4 text-base text-navy-700">
+            <span className="font-medium text-navy-900">Usage:</span> {usageLabel}
+          </p>
+        ) : null}
         <ul className="space-y-3">
           {priceableItems.length === 0 ? (
             <li className="text-navy-400">No options selected yet.</li>
@@ -61,8 +99,12 @@ export function PatientView({ result, config, onClose }: PatientViewProps) {
             priceableItems.map((item) => (
               <li key={item.id} className="flex items-baseline justify-between gap-4 border-b border-navy-100 pb-3">
                 <div>
-                  <p className="text-base font-medium text-navy-900">{item.label}</p>
-                  {item.description ? <p className="text-sm text-navy-500">{item.description}</p> : null}
+                  <p className="text-base font-medium text-navy-900">
+                    {showExact ? item.label : item.customerLabel}
+                  </p>
+                  {showExact && item.description ? (
+                    <p className="text-sm text-navy-500">{item.description}</p>
+                  ) : null}
                 </div>
                 <span className="shrink-0 text-base font-semibold text-navy-900 tabular-nums">
                   {formatCents(item.amountCents)}
@@ -72,7 +114,9 @@ export function PatientView({ result, config, onClose }: PatientViewProps) {
           )}
           {discountItems.map((item) => (
             <li key={item.id} className="flex items-baseline justify-between gap-4 border-b border-navy-100 pb-3">
-              <p className="text-base font-medium text-teal-700">{item.label}</p>
+              <p className="text-base font-medium text-teal-700">
+                {showExact ? item.label : item.customerLabel}
+              </p>
               <span className="shrink-0 text-base font-semibold text-teal-700 tabular-nums">
                 -{formatCents(Math.abs(item.amountCents))}
               </span>
@@ -85,12 +129,31 @@ export function PatientView({ result, config, onClose }: PatientViewProps) {
             <span className="text-navy-600">Retail value</span>
             <span className="font-medium text-navy-900 tabular-nums">{formatCents(result.retailTotalCents)}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-navy-600">Insurance contribution</span>
-            <span className="font-medium text-navy-900 tabular-nums">
-              {formatCents(result.insuranceContributionCents)}
-            </span>
-          </div>
+
+          {insuranceLines ? (
+            <>
+              {insuranceLines.patient.map((line) => (
+                <div key={line.label} className="flex items-center justify-between">
+                  <span className="text-navy-600">{line.label}</span>
+                  <span className="font-medium text-navy-900 tabular-nums">{formatCents(line.cents)}</span>
+                </div>
+              ))}
+              {insuranceLines.insurance.map((line) => (
+                <div key={line.label} className="flex items-center justify-between">
+                  <span className="text-navy-600">{line.label}</span>
+                  <span className="font-medium text-teal-700 tabular-nums">-{formatCents(line.cents)}</span>
+                </div>
+              ))}
+            </>
+          ) : result.insuranceContributionCents > 0 ? (
+            <div className="flex items-center justify-between">
+              <span className="text-navy-600">Insurance contribution</span>
+              <span className="font-medium text-teal-700 tabular-nums">
+                -{formatCents(result.insuranceContributionCents)}
+              </span>
+            </div>
+          ) : null}
+
           {result.discountTotalCents > 0 ? (
             <div className="flex items-center justify-between">
               <span className="text-navy-600">Discounts</span>

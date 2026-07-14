@@ -4,55 +4,72 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { MoneyField } from "@/components/ui/money-field";
-import { CheckboxField } from "@/components/ui/checkbox";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { Dispatch } from "react";
-import type { LensTypeConfig, QuoteInput } from "@/lib/types";
+import type { OrderType, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
 interface FrameStepProps {
   input: QuoteInput;
   dispatch: Dispatch<QuoteAction>;
-  frameOnlyLensType: LensTypeConfig | undefined;
-  defaultLensTypeId: string | null;
 }
 
-export function FrameStep({ input, dispatch, frameOnlyLensType, defaultLensTypeId }: FrameStepProps) {
-  const { frame } = input;
+const ORDER_TYPE_OPTIONS: { value: OrderType; label: string }[] = [
+  { value: "complete_pair", label: "Complete Pair" },
+  { value: "lens_only", label: "Lens Only" },
+  { value: "frame_only", label: "Frame Only" },
+];
 
-  function toggleFrameOnly(checked: boolean) {
-    dispatch({ type: "SET_FRAME", field: "frameOnly", value: checked });
-    if (checked && frameOnlyLensType) {
-      dispatch({ type: "SET_LENS_TYPE", lensTypeId: frameOnlyLensType.id, isProgressive: false });
-    } else if (!checked && input.lensTypeId === frameOnlyLensType?.id) {
-      // The default lens type is never Progressive (see QuoteBuilder's
-      // defaultLensType selection), so isProgressive is always false here.
-      dispatch({ type: "SET_LENS_TYPE", lensTypeId: defaultLensTypeId, isProgressive: false });
-    }
-  }
+const ORDER_TYPE_HELP: Record<OrderType, string> = {
+  complete_pair: "Frame and lenses. Lens configuration unlocks once a valid prescription is applied below.",
+  lens_only: "New lenses only, e.g. into a patient-owned frame. No frame charge. A prescription is still required.",
+  frame_only: "Frame purchase only — no lenses on this order, so no prescription is needed.",
+};
+
+/**
+ * Frame retail price/description, and the order type (Complete Pair / Lens
+ * Only / Frame Only). Order type is a first-class choice made here — not
+ * derived from the lens type — because it determines whether the
+ * Prescription section (directly below this step) is required at all.
+ * Insurance fields for the frame (copay, allowance) live in the unified
+ * Insurance section near the bottom of the Quote Builder — not here — so
+ * every insurance-related control is grouped in one place.
+ */
+export function FrameStep({ input, dispatch }: FrameStepProps) {
+  const { frame, orderType } = input;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>1. Frame</CardTitle>
-        <CardDescription>Enter the frame retail price and any frame-specific insurance details.</CardDescription>
+        <CardTitle>1. Frame &amp; Order Type</CardTitle>
+        <CardDescription>Enter the frame retail price and choose what this order includes.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div>
+          <p className="mb-2 text-sm font-medium text-navy-700">Order type</p>
+          <SegmentedControl
+            label="Order type"
+            options={ORDER_TYPE_OPTIONS}
+            value={orderType}
+            onChange={(value) => dispatch({ type: "SET_ORDER_TYPE", orderType: value })}
+            className="w-full sm:w-auto"
+          />
+          <p className="mt-1.5 text-xs text-navy-500">{ORDER_TYPE_HELP[orderType]}</p>
+        </div>
+
         <div>
           <Label htmlFor="frame-retail-price">Frame retail price</Label>
           <MoneyField
             id="frame-retail-price"
             valueCents={frame.retailPriceCents}
             onChangeCents={(cents) => dispatch({ type: "SET_FRAME", field: "retailPriceCents", value: cents })}
+            disabled={orderType === "lens_only"}
             aria-label="Frame retail price"
           />
+          {orderType === "lens_only" ? (
+            <p className="mt-1 text-xs text-navy-400">Not applicable for a lens-only order.</p>
+          ) : null}
         </div>
-
-        <CheckboxField
-          label="Frame purchase only (no lenses on this order)"
-          description="Hides lens, material, coating, and photochromic controls for this quote."
-          checked={frame.frameOnly}
-          onChange={(e) => toggleFrameOnly(e.target.checked)}
-        />
 
         <div>
           <Label htmlFor="frame-custom-description">
@@ -71,29 +88,6 @@ export function FrameStep({ input, dispatch, frameOnlyLensType, defaultLensTypeI
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="frame-allowance">Frame insurance allowance</Label>
-            <MoneyField
-              id="frame-allowance"
-              valueCents={frame.insuranceAllowanceCents}
-              onChangeCents={(cents) => dispatch({ type: "SET_FRAME", field: "insuranceAllowanceCents", value: cents })}
-              aria-label="Frame insurance allowance"
-            />
-            <p className="mt-1 text-xs text-navy-400">Used when Insurance Allowances mode is selected in step 6.</p>
-          </div>
-          <div>
-            <Label htmlFor="frame-copay">Frame copay</Label>
-            <MoneyField
-              id="frame-copay"
-              valueCents={frame.copayCents}
-              onChangeCents={(cents) => dispatch({ type: "SET_FRAME", field: "copayCents", value: cents })}
-              aria-label="Frame copay"
-            />
-            <p className="mt-1 text-xs text-navy-400">Used when Insurance Copays mode is selected in step 6.</p>
-          </div>
-        </div>
-
         <div>
           <Label htmlFor="frame-manual-adjustment">Manual frame adjustment</Label>
           <MoneyField
@@ -101,6 +95,7 @@ export function FrameStep({ input, dispatch, frameOnlyLensType, defaultLensTypeI
             valueCents={frame.manualAdjustmentCents}
             onChangeCents={(cents) => dispatch({ type: "SET_FRAME", field: "manualAdjustmentCents", value: cents })}
             allowNegative
+            disabled={orderType === "lens_only"}
             aria-label="Manual frame adjustment"
           />
           <p className="mt-1 text-xs text-navy-400">

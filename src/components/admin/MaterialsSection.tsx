@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { MoneyField } from "@/components/ui/money-field";
+import { CheckboxField } from "@/components/ui/checkbox";
 import { EditableList } from "@/components/admin/EditableList";
+import { CoverageOverrideField } from "@/components/admin/CoverageOverrideField";
 import { findMaterialPrice, upsertMaterialPrice } from "@/lib/calculation/materialPricing";
 import { generateId } from "@/lib/id";
 import type { LensTypeConfig, MaterialConfig, ProgressiveDesignConfig } from "@/lib/types";
@@ -28,9 +30,7 @@ function buildPriceMatrixRows(
   lensTypes: LensTypeConfig[],
   progressiveDesigns: ProgressiveDesignConfig[]
 ): PriceMatrixRow[] {
-  const activeLensTypes = lensTypes
-    .filter((lt) => lt.active && lt.key !== "frame_only")
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const activeLensTypes = lensTypes.filter((lt) => lt.active).sort((a, b) => a.sortOrder - b.sortOrder);
   const activeDesigns = progressiveDesigns
     .filter((d) => d.active)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -83,6 +83,8 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
             active: true,
             sortOrder: materials.length,
             prices: [],
+            appliesToHighCylinderSurfacing: false,
+            isHighIndex: false,
           })}
           renderFields={(item, update) => (
             <div className="space-y-4">
@@ -101,6 +103,20 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
                 </div>
               </div>
 
+              <CheckboxField
+                label="Applies to high-cylinder surfacing fee"
+                description="When on, a quote using this material can trigger the configured high-cylinder surfacing fee if either eye's cylinder is at or beyond the configured threshold (Single Vision or Bifocal only — never Progressive, and never High Index materials)."
+                checked={item.appliesToHighCylinderSurfacing}
+                onChange={(e) => update({ appliesToHighCylinderSurfacing: e.target.checked })}
+              />
+
+              <CheckboxField
+                label="High index material"
+                description="High-index lenses are handled by a separate process and are always excluded from the prescription-based high-cylinder surfacing fee, even if the option above is on."
+                checked={item.isHighIndex}
+                onChange={(e) => update({ isHighIndex: e.target.checked })}
+              />
+
               <div>
                 <p className="mb-2 text-sm font-medium text-navy-700">Price by lens type</p>
                 {rows.length === 0 ? (
@@ -114,9 +130,9 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
                       return (
                         <div
                           key={row.key}
-                          className="grid grid-cols-1 items-end gap-2 rounded-md border border-navy-100 p-2.5 sm:grid-cols-[1fr_140px_140px]"
+                          className="grid grid-cols-1 items-start gap-2 rounded-md border border-navy-100 p-2.5 sm:grid-cols-[1fr_140px_220px]"
                         >
-                          <p className="text-sm text-navy-700">{row.rowLabel}</p>
+                          <p className="pt-1.5 text-sm text-navy-700">{row.rowLabel}</p>
                           <div>
                             <Label htmlFor={`${item.id}-${row.key}-price`} className="text-xs">
                               Price
@@ -136,25 +152,21 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
                               }
                             />
                           </div>
-                          <div>
-                            <Label htmlFor={`${item.id}-${row.key}-copay`} className="text-xs">
-                              Copay <span className="font-normal text-navy-400">(optional)</span>
-                            </Label>
-                            <MoneyField
-                              id={`${item.id}-${row.key}-copay`}
-                              valueCents={existing?.insuranceCopayCents ?? 0}
-                              onChangeCents={(cents) =>
-                                update({
-                                  prices: upsertMaterialPrice(
-                                    item,
-                                    row.lensType.id,
-                                    row.progressiveDesign?.id ?? null,
-                                    { insuranceCopayCents: cents }
-                                  ),
-                                } as Partial<MaterialConfig>)
-                              }
-                            />
-                          </div>
+                          <CoverageOverrideField
+                            id={`${item.id}-${row.key}-coverage`}
+                            label="Insurance coverage"
+                            override={existing?.insuranceCoverage}
+                            onChange={(insuranceCoverage) =>
+                              update({
+                                prices: upsertMaterialPrice(
+                                  item,
+                                  row.lensType.id,
+                                  row.progressiveDesign?.id ?? null,
+                                  { insuranceCoverage }
+                                ),
+                              } as Partial<MaterialConfig>)
+                            }
+                          />
                         </div>
                       );
                     })}

@@ -1,15 +1,26 @@
 import { generateId } from "@/lib/id";
 import { clampNonNegative, sumCents } from "@/lib/money";
-import { conditionalFeeRules } from "@/lib/calculation/rules";
+import { conditionalFeeRules, type ConditionalFeeCandidate } from "@/lib/calculation/rules";
 import { findMaterialPrice } from "@/lib/calculation/materialPricing";
 import type {
   AllowanceBreakdown,
-  CoverageStatus,
+  CoverageMethod,
+  InsuranceBreakdown,
   PricingConfiguration,
   QuoteCalculationResult,
   QuoteInput,
   QuoteLineItem,
+  SurfacingFeeReason,
 } from "@/lib/types";
+
+/**
+ * Generalized, customer-safe names per line-item category. Patient/customer
+ * surfaces render QuoteLineItem.customerLabel so a specific brand or lab
+ * technology (e.g. "Crizal Sapphire", "Transitions Gen S — Ruby") is never
+ * exposed on a customer-facing estimate.
+ */
+const CUSTOMER_COATING_LABEL = "Premium Anti-Reflective Coating";
+const CUSTOMER_PHOTOCHROMIC_LABEL = "Photochromic Lens Upgrade";
 
 /**
  * Pure calculation engine for the optical quote calculator.
@@ -22,27 +33,74 @@ import type {
  *  - Patient responsibility can never be negative.
  *  - Every automatic fee must appear as its own itemized line so nothing is
  *    ever buried inside another price.
+ *  - Retail value, copays owed by the patient, allowances paid by
+ *    insurance, non-covered retail charges, discounts, and patient
+ *    responsibility are kept as separate, independently reported figures —
+ *    never collapsed into one number before the final total.
+ *
+ * Unified insurance mode ("insurance"):
+ *  Each insurable category (frame / lens+material / coating / photochromic)
+ *  is billed one of three ways (see resolveCategory):
+ *   - "retail": the patient owes its retail, which a frame/lens allowance
+ *     may then offset (capped at the eligible pool; any excess is "unused").
+ *   - "copay": the copay REPLACES that category's retail — the patient owes
+ *     the copay and insurance covers the remainder (retail − copay). A copay
+ *     is never added on top of retail, and the category no longer draws from
+ *     the allowance pool.
+ *   - "covered": insurance pays the category's full retail; the patient owes
+ *     nothing for it.
+ *  Patient responsibility, copays owed, insurance contribution (allowances
+ *  applied + covered retail + the insurance portion of every copay), unused
+ *  allowance, and non-covered charges are all reported as separate figures.
  */
 
+/** One eligible-charge pool's allowance math: applied amount capped at the pool, plus unused. */
+function applyAllowance(allowanceCents: number, eligibleCents: number) {
+  const allowance = clampNonNegative(allowanceCents);
+  const eligible = clampNonNegative(eligibleCents);
+  const applied = Math.min(allowance, eligible);
+  const unused = clampNonNegative(allowance - eligible);
+  return { allowance, applied, unused };
+}
+
 /**
- * Determines how much of a single priced item the patient pays in Insurance
- * Copays mode, based on how the optician has classified that item:
- *  - "included": insurance covers it fully, patient pays $0.
- *  - "noncovered": insurance does not apply, patient pays the full retail amount.
- *  - "copay": patient pays the configured copay, capped so it can never
- *     exceed the item's own retail value (never charge more than retail).
+ * Interprets one category's CoverageMethod against its retail price. This is
+ * the single place a CoverageMethod is turned into money.
+ *
+ * A copay REPLACES the patient's cost for that category — it is never added
+ * on top of retail. Given a $180 coating with a $60 copay: the patient owes
+ * $60 and insurance contributes the remaining $120. The four buckets a
+ * category can split into:
+ *  - eligibleRetailCents: retail the patient still owes AND that a frame/lens
+ *    allowance may offset ("retail" method only).
+ *  - copayPatientCents: what the patient owes for a copay category (the
+ *    copay, capped at retail so it can never exceed the item's price).
+ *  - copayInsuranceCents: the rest of a copay item's retail that insurance
+ *    picks up (retail − copay).
+ *  - coveredInsuranceCents: full retail that insurance pays for a fully
+ *    "covered" category (patient owes nothing).
+ *
+ * A copay/covered category is NOT eligible for the allowance pool — the
+ * copay/coverage has already fully settled it. If an office wants a frame or
+ * lens allowance to apply, that category is billed at "retail" and the
+ * allowance offsets it.
  */
-function computeCopayPortion(coverage: CoverageStatus, retailCents: number, copayCents: number): number {
-  const safeRetail = Math.max(retailCents, 0);
-  switch (coverage) {
-    case "included":
-      return 0;
-    case "noncovered":
-      return safeRetail;
-    case "copay":
-    default:
-      return Math.min(Math.max(copayCents, 0), safeRetail);
+function resolveCategory(method: CoverageMethod, retailCents: number) {
+  const retail = clampNonNegative(retailCents);
+  if (method.type === "covered") {
+    return { eligibleRetailCents: 0, copayPatientCents: 0, copayInsuranceCents: 0, coveredInsuranceCents: retail };
   }
+  if (method.type === "copay") {
+    const copayPatient = Math.min(clampNonNegative(method.amountCents), retail);
+    return {
+      eligibleRetailCents: 0,
+      copayPatientCents: copayPatient,
+      copayInsuranceCents: retail - copayPatient,
+      coveredInsuranceCents: 0,
+    };
+  }
+  // "retail": patient pays this category's retail, offsettable by an allowance.
+  return { eligibleRetailCents: retail, copayPatientCents: 0, copayInsuranceCents: 0, coveredInsuranceCents: 0 };
 }
 
 export function calculateQuote(
@@ -59,8 +117,8 @@ export function calculateQuote(
     warnings.push("The previously selected lens type is no longer active and was excluded from this quote.");
   }
 
-  const isFrameOnly = Boolean(input.frame.frameOnly) || lensType?.key === "frame_only";
-  const isLensOnly = lensType?.key === "lens_only";
+  const isFrameOnly = input.orderType === "frame_only";
+  const isLensOnly = input.orderType === "lens_only";
 
   /* ---------------------------------------------------------------------- */
   /* Frame                                                                    */
@@ -74,6 +132,7 @@ export function calculateQuote(
     lineItems.push({
       id: generateId("frame"),
       label,
+      customerLabel: label,
       category: "frame",
       amountCents: frameRetailCents,
       calculationSource: input.frame.manualAdjustmentCents ? "manual" : "configured",
@@ -133,7 +192,10 @@ export function calculateQuote(
   // The lens type only determines which pricing table and options are
   // available — it has no price of its own. The actual lens price always
   // comes from the material's price entry for this lens type (and, for
-  // Progressive, this specific progressive design).
+  // Progressive, this specific progressive design). The progressive design
+  // name is promoted into the primary line-item label (not buried in the
+  // description) so it always appears correctly and prominently in every
+  // summary and printout that renders line-item labels.
   if (!isFrameOnly && material && lensType && (!isProgressive || progressiveDesign)) {
     const matchedPrice = findMaterialPrice(material, lensType, progressiveDesign?.id ?? null);
 
@@ -145,13 +207,19 @@ export function calculateQuote(
       );
     } else {
       lensAndMaterialRetailCents = matchedPrice.priceCents;
-      const descriptionParts = [progressiveDesign?.name, material.name].filter(
-        (part): part is string => Boolean(part)
-      );
+      const label = progressiveDesign
+        ? `${lensType.name} Lenses — ${progressiveDesign.name}`
+        : `${lensType.name} Lenses`;
       lineItems.push({
         id: generateId("lens"),
-        label: `${lensType.name} Lenses`,
-        description: descriptionParts.length > 0 ? descriptionParts.join(", ") : undefined,
+        label,
+        // The customer-safe label omits the specific progressive design name
+        // (a technology name to hide) — it is only ever the generic lens-type
+        // name, e.g. "Progressive Lenses". The design name stays on `label`
+        // (optician/internal use) and the material technology stays in
+        // `description`, which customer surfaces do not render by default.
+        customerLabel: `${lensType.name} Lenses`,
+        description: material.name,
         category: "lens",
         amountCents: lensAndMaterialRetailCents,
         calculationSource: "configured",
@@ -171,6 +239,7 @@ export function calculateQuote(
       lineItems.push({
         id: generateId("coating"),
         label: coating.name,
+        customerLabel: CUSTOMER_COATING_LABEL,
         description: coating.description,
         category: "coating",
         amountCents: price,
@@ -188,6 +257,7 @@ export function calculateQuote(
     lineItems.push({
       id: generateId("photochromic"),
       label,
+      customerLabel: CUSTOMER_PHOTOCHROMIC_LABEL,
       description: photochromicProduct.description,
       category: "photochromic",
       amountCents: photochromicRetailCents,
@@ -196,31 +266,84 @@ export function calculateQuote(
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Conditional fee rules (e.g. Transitions custom-color surfacing fee)      */
+  /* Conditional fee rules (e.g. Transitions custom-color surfacing fee,      */
+  /* high-cylinder surfacing fee). Rules sharing a stacking group are         */
+  /* mutually exclusive: only the highest-amount eligible candidate in a      */
+  /* group is charged, but every eligible candidate's reason is preserved     */
+  /* in `surfacingFeeReasons` for the Internal Order Worksheet. The           */
+  /* patient-facing line item never reveals a prescription-derived reason.    */
   /* ---------------------------------------------------------------------- */
   let feeRetailCents = 0;
+  const surfacingFeeReasons: SurfacingFeeReason[] = [];
   if (!isFrameOnly) {
+    const candidates: ConditionalFeeCandidate[] = [];
     for (const rule of conditionalFeeRules) {
-      const result = rule.evaluate({ input, config, lensType, photochromicProduct, photochromicColor });
-      if (result) {
-        feeRetailCents += result.amountCents;
-        lineItems.push(result);
+      const candidate = rule.evaluate({ input, config, lensType, material, photochromicProduct, photochromicColor });
+      if (candidate) candidates.push(candidate);
+    }
+
+    const grouped = new Map<string, ConditionalFeeCandidate[]>();
+    const ungrouped: ConditionalFeeCandidate[] = [];
+    for (const candidate of candidates) {
+      if (candidate.stackingGroup) {
+        const list = grouped.get(candidate.stackingGroup) ?? [];
+        list.push(candidate);
+        grouped.set(candidate.stackingGroup, list);
+      } else {
+        ungrouped.push(candidate);
+      }
+    }
+
+    for (const candidate of ungrouped) {
+      feeRetailCents += candidate.amountCents;
+      lineItems.push({
+        id: generateId("fee"),
+        label: candidate.patientLabel,
+        customerLabel: candidate.patientLabel,
+        category: "fee",
+        amountCents: candidate.amountCents,
+        calculationSource: "rule",
+      });
+      if (candidate.customerWarning) warnings.push(candidate.customerWarning);
+    }
+
+    for (const group of grouped.values()) {
+      const winner = [...group].sort((a, b) => b.amountCents - a.amountCents)[0];
+      feeRetailCents += winner.amountCents;
+      lineItems.push({
+        id: generateId("fee"),
+        label: winner.patientLabel,
+        customerLabel: winner.patientLabel,
+        category: "fee",
+        amountCents: winner.amountCents,
+        calculationSource: "rule",
+      });
+      if (winner.customerWarning) warnings.push(winner.customerWarning);
+      for (const candidate of group) {
+        surfacingFeeReasons.push({
+          key: candidate.key,
+          label: candidate.internalReasonLabel,
+          amountCents: candidate.amountCents,
+          charged: candidate.key === winner.key,
+        });
       }
     }
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Adjustments (Step 7): charges first (establish percent-discount basis),  */
-  /* then fixed discounts, percent discounts, and credits.                    */
+  /* Adjustments: charges first (establish percent-discount basis), then      */
+  /* fixed discounts, percent discounts, and credits.                         */
   /* ---------------------------------------------------------------------- */
   const baseRetailBeforeAdjustmentsCents = sumCents(lineItems.map((item) => item.amountCents));
 
   const charges = input.adjustments.filter((adj) => adj.type === "charge");
   const chargeTotalCents = sumCents(charges.map((adj) => Math.abs(adj.amountCents || 0)));
   for (const adj of charges) {
+    const label = adj.label.trim() || "Custom charge";
     lineItems.push({
       id: generateId("custom"),
-      label: adj.label.trim() || "Custom charge",
+      label,
+      customerLabel: label,
       category: "custom",
       amountCents: Math.abs(adj.amountCents || 0),
       calculationSource: "manual",
@@ -232,9 +355,11 @@ export function calculateQuote(
   for (const adj of input.adjustments) {
     if (adj.type === "fixed_discount") {
       const amount = -Math.abs(adj.amountCents || 0);
+      const label = adj.label.trim() || "Discount";
       lineItems.push({
         id: generateId("discount"),
-        label: adj.label.trim() || "Discount",
+        label,
+        customerLabel: label,
         category: "discount",
         amountCents: amount,
         calculationSource: "manual",
@@ -242,18 +367,22 @@ export function calculateQuote(
     } else if (adj.type === "percent_discount") {
       const percent = Math.min(Math.max(adj.percent || 0, 0), 100);
       const amount = -Math.round((percentBasisCents * percent) / 100);
+      const label = adj.label.trim() || `${percent}% discount`;
       lineItems.push({
         id: generateId("discount"),
-        label: adj.label.trim() || `${percent}% discount`,
+        label,
+        customerLabel: label,
         category: "discount",
         amountCents: amount,
         calculationSource: "manual",
       });
     } else if (adj.type === "credit") {
       const amount = -Math.abs(adj.amountCents || 0);
+      const label = adj.label.trim() || "Credit";
       lineItems.push({
         id: generateId("discount"),
-        label: adj.label.trim() || "Credit",
+        label,
+        customerLabel: label,
         category: "discount",
         amountCents: amount,
         calculationSource: "manual",
@@ -269,9 +398,12 @@ export function calculateQuote(
   /* ---------------------------------------------------------------------- */
   /* Insurance calculation                                                    */
   /* ---------------------------------------------------------------------- */
+  let copayTotalCents = 0;
   let insuranceContributionCents = 0;
+  let nonCoveredChargeCents = 0;
   let unusedAllowanceCents = 0;
   let allowanceBreakdown: AllowanceBreakdown | null = null;
+  let insuranceBreakdown: InsuranceBreakdown | null = null;
   let patientResponsibilityCents = 0;
   let isManualOverride = false;
   let overrideNote = "";
@@ -281,101 +413,140 @@ export function calculateQuote(
 
   if (mode === "retail") {
     patientResponsibilityCents = clampNonNegative(retailTotalCents - discountTotalCents);
-    insuranceContributionCents = 0;
-  } else if (mode === "allowances") {
-    const frameEligible = clampNonNegative(frameRetailCents);
-    const frameAllowance = clampNonNegative(input.frame.insuranceAllowanceCents || 0);
-    const frameApplied = Math.min(frameAllowance, frameEligible);
-    const frameUnused = clampNonNegative(frameAllowance - frameEligible);
+  } else if (mode === "insurance") {
+    const coverage = input.insurance.coverage;
 
-    const lensEligible = clampNonNegative(
-      lensAndMaterialRetailCents + coatingRetailCents + photochromicRetailCents + feeRetailCents + chargeTotalCents
+    // The per-quote coverage selection is AUTHORITATIVE: it takes precedence
+    // over every default (office defaults and product/material-price
+    // overrides). Product-level overrides only seed a new quote's initial
+    // defaults; they never override what the optician chose on this quote —
+    // otherwise switching a category to Retail would appear "stuck". The
+    // material price for the selected lens type already IS the lens price, so
+    // a single "Lens" coverage governs the combined lens+material amount and
+    // it is never billed twice.
+    //
+    // Frame copay is naturally excluded for Lens Only and every lens-group
+    // category for Frame Only, because a copay is capped at the category's
+    // retail (0 when the component isn't on this order).
+    const frameCat = resolveCategory(coverage.frameCoverage, frameRetailCents);
+    const lensCat = resolveCategory(coverage.lensCoverage, lensAndMaterialRetailCents);
+    const coatingCat = resolveCategory(coverage.coatingCoverage, coatingRetailCents);
+    const photochromicCat = resolveCategory(coverage.photochromicCoverage, photochromicRetailCents);
+
+    // Surfacing fees and manual charges are always patient-owed at retail
+    // and are eligible for the lens allowance pool.
+    const feeEligibleCents = clampNonNegative(feeRetailCents);
+    const chargeEligibleCents = clampNonNegative(chargeTotalCents);
+
+    // Allowances reduce their eligible retail pool, capped so they can never
+    // exceed it; any excess is reported separately as unused. Only
+    // "retail"-method categories feed a pool — copay/covered categories are
+    // already settled and never draw from (or need) an allowance.
+    const frameAllowanceResult = applyAllowance(coverage.frameAllowanceCents, frameCat.eligibleRetailCents);
+
+    const lensPoolEligibleCents = clampNonNegative(
+      lensCat.eligibleRetailCents +
+        coatingCat.eligibleRetailCents +
+        photochromicCat.eligibleRetailCents +
+        feeEligibleCents +
+        chargeEligibleCents
     );
-    const lensAllowance = clampNonNegative(input.insurance.allowances.lensAllowanceCents || 0);
-    const lensApplied = Math.min(lensAllowance, lensEligible);
-    const lensUnused = clampNonNegative(lensAllowance - lensEligible);
+    const lensAllowanceResult = applyAllowance(coverage.lensAllowanceCents, lensPoolEligibleCents);
 
-    const remainingBeforeAdditional = clampNonNegative(retailTotalCents - frameApplied - lensApplied);
-    const additionalCredit = clampNonNegative(input.insurance.allowances.additionalCreditCents || 0);
-    const additionalApplied = Math.min(additionalCredit, remainingBeforeAdditional);
-    const additionalUnused = clampNonNegative(additionalCredit - remainingBeforeAdditional);
+    const eligibleRemainingAfterPrimary = clampNonNegative(
+      frameCat.eligibleRetailCents -
+        frameAllowanceResult.applied +
+        (lensPoolEligibleCents - lensAllowanceResult.applied)
+    );
+    const additionalAllowanceResult = applyAllowance(
+      coverage.additionalAllowanceCents,
+      eligibleRemainingAfterPrimary
+    );
 
-    const afterAllowances = clampNonNegative(remainingBeforeAdditional - additionalApplied);
-    patientResponsibilityCents = clampNonNegative(afterAllowances - discountTotalCents);
-    insuranceContributionCents = frameApplied + lensApplied + additionalApplied;
-    unusedAllowanceCents = frameUnused + lensUnused + additionalUnused;
+    const totalEligibleRetailCents = frameCat.eligibleRetailCents + lensPoolEligibleCents;
+    const totalAllowancesAppliedCents =
+      frameAllowanceResult.applied + lensAllowanceResult.applied + additionalAllowanceResult.applied;
+
+    const coveredInsuranceTotalCents =
+      frameCat.coveredInsuranceCents +
+      lensCat.coveredInsuranceCents +
+      coatingCat.coveredInsuranceCents +
+      photochromicCat.coveredInsuranceCents;
+    const copayInsuranceTotalCents =
+      frameCat.copayInsuranceCents +
+      lensCat.copayInsuranceCents +
+      coatingCat.copayInsuranceCents +
+      photochromicCat.copayInsuranceCents;
+
+    const otherCopayCents = clampNonNegative(coverage.otherCopayCents);
+    copayTotalCents =
+      frameCat.copayPatientCents +
+      lensCat.copayPatientCents +
+      coatingCat.copayPatientCents +
+      photochromicCat.copayPatientCents +
+      otherCopayCents;
+
+    nonCoveredChargeCents = clampNonNegative(coverage.otherChargeCents);
+
+    // Patient owes: retail that survived the allowances, plus every copay,
+    // plus flat non-covered charges, less any manual discounts. Covered and
+    // copay-insurance portions never touch patient responsibility.
+    patientResponsibilityCents = clampNonNegative(
+      totalEligibleRetailCents -
+        totalAllowancesAppliedCents +
+        copayTotalCents +
+        nonCoveredChargeCents -
+        discountTotalCents
+    );
+    insuranceContributionCents =
+      totalAllowancesAppliedCents + coveredInsuranceTotalCents + copayInsuranceTotalCents;
+    unusedAllowanceCents = frameAllowanceResult.unused + lensAllowanceResult.unused + additionalAllowanceResult.unused;
 
     allowanceBreakdown = {
-      frameAllowanceCents: frameAllowance,
-      frameAllowanceAppliedCents: frameApplied,
-      frameAllowanceUnusedCents: frameUnused,
-      lensAllowanceCents: lensAllowance,
-      lensAllowanceAppliedCents: lensApplied,
-      lensAllowanceUnusedCents: lensUnused,
-      additionalCreditCents: additionalCredit,
-      additionalCreditAppliedCents: additionalApplied,
-      additionalCreditUnusedCents: additionalUnused,
+      frameAllowanceCents: frameAllowanceResult.allowance,
+      frameAllowanceAppliedCents: frameAllowanceResult.applied,
+      frameAllowanceUnusedCents: frameAllowanceResult.unused,
+      lensAllowanceCents: lensAllowanceResult.allowance,
+      lensAllowanceAppliedCents: lensAllowanceResult.applied,
+      lensAllowanceUnusedCents: lensAllowanceResult.unused,
+      additionalAllowanceCents: additionalAllowanceResult.allowance,
+      additionalAllowanceAppliedCents: additionalAllowanceResult.applied,
+      additionalAllowanceUnusedCents: additionalAllowanceResult.unused,
     };
-  } else if (mode === "copays") {
-    const copays = input.insurance.copays;
-    const frameRetailForCopay = clampNonNegative(frameRetailCents);
-    const lensRetailForCopay = clampNonNegative(lensAndMaterialRetailCents);
-    const coatingRetailForCopay = clampNonNegative(coatingRetailCents);
-    const photoRetailForCopay = clampNonNegative(photochromicRetailCents);
 
-    const framePatientPortion = computeCopayPortion(
-      copays.frameCoverage,
-      frameRetailForCopay,
-      clampNonNegative(input.frame.copayCents || 0)
-    );
-    const lensPatientPortion = computeCopayPortion(
-      copays.lensCoverage,
-      lensRetailForCopay,
-      clampNonNegative(copays.lensCopayCents || 0)
-    );
-    const coatingPatientPortion = computeCopayPortion(
-      copays.coatingCoverage,
-      coatingRetailForCopay,
-      clampNonNegative(copays.coatingCopayCents || 0)
-    );
-    const photoPatientPortion = computeCopayPortion(
-      copays.photochromicCoverage,
-      photoRetailForCopay,
-      clampNonNegative(copays.photochromicCopayCents || 0)
-    );
-
-    const copayPatientSubtotal =
-      framePatientPortion + lensPatientPortion + coatingPatientPortion + photoPatientPortion;
-
-    const otherCopay = clampNonNegative(copays.otherCopayCents || 0);
-    // Automatic fees and custom charges are always fully patient-responsible in copay mode:
-    // they sit outside the office's standard insurance copay schedule.
-    const alwaysPatientCharges = feeRetailCents + chargeTotalCents;
-
-    const patientResponsibilityBeforeDiscount = copayPatientSubtotal + otherCopay + alwaysPatientCharges;
-    patientResponsibilityCents = clampNonNegative(patientResponsibilityBeforeDiscount - discountTotalCents);
-
-    insuranceContributionCents =
-      frameRetailForCopay -
-      framePatientPortion +
-      (lensRetailForCopay - lensPatientPortion) +
-      (coatingRetailForCopay - coatingPatientPortion) +
-      (photoRetailForCopay - photoPatientPortion);
+    insuranceBreakdown = {
+      frameAllowanceAppliedCents: frameAllowanceResult.applied,
+      lensAllowanceAppliedCents: lensAllowanceResult.applied,
+      additionalAllowanceAppliedCents: additionalAllowanceResult.applied,
+      frameCoveredCents: frameCat.coveredInsuranceCents,
+      lensCoveredCents: lensCat.coveredInsuranceCents,
+      coatingCoveredCents: coatingCat.coveredInsuranceCents,
+      photochromicCoveredCents: photochromicCat.coveredInsuranceCents,
+      frameCopayCents: frameCat.copayPatientCents,
+      lensCopayCents: lensCat.copayPatientCents,
+      coatingCopayCents: coatingCat.copayPatientCents,
+      photochromicCopayCents: photochromicCat.copayPatientCents,
+      otherCopayCents,
+      otherChargeCents: nonCoveredChargeCents,
+    };
   } else if (mode === "manual") {
     isManualOverride = true;
     overrideNote = input.insurance.manualOverride.note.trim();
     preOverridePatientResponsibilityCents = clampNonNegative(retailTotalCents - discountTotalCents);
     patientResponsibilityCents = clampNonNegative(input.insurance.manualOverride.finalPatientResponsibilityCents || 0);
-    insuranceContributionCents = 0;
   }
 
   return {
     lineItems,
     retailTotalCents,
     discountTotalCents,
+    copayTotalCents,
     insuranceContributionCents,
+    nonCoveredChargeCents,
     unusedAllowanceCents,
     allowanceBreakdown,
+    insuranceBreakdown,
+    surfacingFeeReasons,
     patientResponsibilityCents,
     isManualOverride,
     overrideNote,

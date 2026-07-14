@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { usePricingConfiguration } from "@/lib/pricing/usePricingConfiguration";
 import { calculateQuote } from "@/lib/calculation/calculateQuote";
 import { createDefaultQuoteInput } from "@/lib/calculation/defaultQuoteInput";
 import { quoteReducer } from "@/components/quote/quoteReducer";
 import { FrameStep } from "@/components/quote/FrameStep";
+import { UsageStep } from "@/components/quote/UsageStep";
 import { LensTypeStep } from "@/components/quote/LensTypeStep";
 import { MaterialStep } from "@/components/quote/MaterialStep";
+import { PrescriptionStep } from "@/components/quote/PrescriptionStep";
 import { CoatingStep } from "@/components/quote/CoatingStep";
 import { PhotochromicStep } from "@/components/quote/PhotochromicStep";
 import { InsuranceStep } from "@/components/quote/InsuranceStep";
@@ -15,7 +17,8 @@ import { AdjustmentsStep } from "@/components/quote/AdjustmentsStep";
 import { QuoteSummary } from "@/components/quote/QuoteSummary";
 import { QuoteActions } from "@/components/quote/QuoteActions";
 import { PatientView } from "@/components/quote/PatientView";
-import { PrintableQuote } from "@/components/quote/PrintableQuote";
+import { CustomerEstimatePrint } from "@/components/quote/PrintableQuote";
+import { InternalOrderWorksheetPrint } from "@/components/quote/InternalOrderWorksheetPrint";
 import { DemoPricingBanner } from "@/components/layout/DemoPricingBanner";
 import { clampNonNegative } from "@/lib/money";
 
@@ -53,15 +56,21 @@ function QuoteBuilderReady({
   const config = initialConfig;
   const [input, dispatch] = useReducer(quoteReducer, config, createDefaultQuoteInput);
   const [patientViewOpen, setPatientViewOpen] = useState(false);
+  const [printMode, setPrintMode] = useState<"customer" | "internal">("customer");
+  const [printRequestId, setPrintRequestId] = useState(0);
 
   const lensType = input.lensTypeId
     ? config.lensTypes.find((lt) => lt.id === input.lensTypeId)
     : undefined;
-  const isFrameOnly = Boolean(input.frame.frameOnly) || lensType?.key === "frame_only";
-  const frameOnlyLensType = config.lensTypes.find((lt) => lt.key === "frame_only");
-  const defaultLensType = config.lensTypes
-    .filter((lt) => lt.active && lt.key !== "frame_only")
-    .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+
+  // Lens configuration (lens type, progressive design, material, coating,
+  // photochromic) stays locked until a valid prescription has been applied
+  // — never applicable at all for a frame-only order.
+  const isFrameOnly = input.orderType === "frame_only";
+  const lensControlsDisabled = isFrameOnly || input.prescription === null;
+  const lensControlsDisabledReason = isFrameOnly
+    ? "Not applicable for a frame-only order."
+    : "Enter and apply a valid prescription above to continue configuring lenses.";
 
   // Calculation happens here, via the pure calculateQuote function — never
   // inline in JSX — and is memoized so it only re-runs when inputs change.
@@ -73,6 +82,22 @@ function QuoteBuilderReady({
     }
     return clampNonNegative(result.retailTotalCents - result.discountTotalCents);
   }, [input.insurance.mode, result]);
+
+  // Printing a specific layout requires the DOM to reflect the new
+  // printMode before window.print() runs. Updating printMode and bumping
+  // printRequestId happen in the same render; this effect then fires after
+  // the commit, so by the time window.print() runs the correct print-only
+  // section is already the one marked `print:block`.
+  useEffect(() => {
+    if (printRequestId === 0) return;
+    window.print();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printRequestId]);
+
+  function requestPrint(mode: "customer" | "internal") {
+    setPrintMode(mode);
+    setPrintRequestId((n) => n + 1);
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -89,31 +114,32 @@ function QuoteBuilderReady({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="space-y-5 lg:col-span-2 no-print">
-          <FrameStep
-            input={input}
-            dispatch={dispatch}
-            frameOnlyLensType={frameOnlyLensType}
-            defaultLensTypeId={defaultLensType?.id ?? null}
-          />
+          <FrameStep input={input} dispatch={dispatch} />
+          <UsageStep input={input} dispatch={dispatch} />
+          <PrescriptionStep input={input} dispatch={dispatch} />
           <LensTypeStep
             input={input}
             dispatch={dispatch}
             lensTypes={config.lensTypes}
             progressiveDesigns={config.progressiveDesigns}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
           />
           <MaterialStep
             input={input}
             dispatch={dispatch}
             materials={config.materials}
             lensType={lensType}
-            disabled={isFrameOnly}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
           />
           <CoatingStep
             input={input}
             dispatch={dispatch}
             coatings={config.coatings}
             lensType={lensType}
-            disabled={isFrameOnly}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
           />
           <PhotochromicStep
             input={input}
@@ -122,7 +148,8 @@ function QuoteBuilderReady({
             colors={config.photochromicColors}
             lensType={lensType}
             transitionsSurfacingFeeCents={config.transitionsSurfacingFeeCents}
-            disabled={isFrameOnly}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
           />
           <InsuranceStep input={input} dispatch={dispatch} preOverrideEstimateCents={preOverrideEstimateCents} />
           <AdjustmentsStep input={input} dispatch={dispatch} />
@@ -132,17 +159,23 @@ function QuoteBuilderReady({
           <QuoteActions
             result={result}
             config={config}
+            usage={input.usage}
             onResetQuote={() => dispatch({ type: "RESET_QUOTE", config })}
             onOpenPatientView={() => setPatientViewOpen(true)}
+            onPrintCustomerEstimate={() => requestPrint("customer")}
+            onPrintInternalWorksheet={() => requestPrint("internal")}
           />
-          <QuoteSummary result={result} config={config} mode={input.insurance.mode} />
+          <QuoteSummary result={result} config={config} mode={input.insurance.mode} usage={input.usage} />
         </div>
       </div>
 
-      <PrintableQuote result={result} config={config} />
+      {printMode === "customer" ? <CustomerEstimatePrint result={result} config={config} usage={input.usage} /> : null}
+      {printMode === "internal" ? (
+        <InternalOrderWorksheetPrint input={input} result={result} config={config} />
+      ) : null}
 
       {patientViewOpen ? (
-        <PatientView result={result} config={config} onClose={() => setPatientViewOpen(false)} />
+        <PatientView result={result} config={config} usage={input.usage} onClose={() => setPatientViewOpen(false)} />
       ) : null}
     </div>
   );

@@ -27,7 +27,7 @@ export function AdjustmentsStep({ input, dispatch }: AdjustmentsStepProps) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-4">
         <div>
-          <CardTitle>7. Adjustments</CardTitle>
+          <CardTitle>8. Adjustments</CardTitle>
           <CardDescription>Add optional discounts, charges, or credits.</CardDescription>
         </div>
         {input.adjustments.length > 0 ? (

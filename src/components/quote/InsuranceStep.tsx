@@ -3,12 +3,12 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { MoneyField } from "@/components/ui/money-field";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Separator } from "@/components/ui/separator";
 import { formatCents } from "@/lib/money";
-import type { Dispatch } from "react";
-import type { CoverageStatus, InsuranceMode, QuoteInput } from "@/lib/types";
+import type { Dispatch, ReactNode } from "react";
+import type { CoverageMethod, InsuranceCoverageInput, InsuranceMode, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
 interface InsuranceStepProps {
@@ -19,28 +19,45 @@ interface InsuranceStepProps {
 
 const MODES: { value: InsuranceMode; label: string; description: string }[] = [
   { value: "retail", label: "Retail / Self-Pay", description: "Patient pays the full retail total." },
-  { value: "allowances", label: "Insurance Allowances", description: "Enter frame/lens allowances to subtract from retail." },
-  { value: "copays", label: "Insurance Copays", description: "Enter copays per item and mark coverage status." },
-  { value: "manual", label: "Manual Override", description: "Directly enter the final patient responsibility." },
+  {
+    value: "insurance",
+    label: "Use Insurance",
+    description: "Set each category to a copay, fully covered, or retail (with an allowance).",
+  },
+  { value: "manual", label: "Manual Final Price Override", description: "Directly enter the final patient responsibility." },
 ];
 
-const coverageOptions: { value: CoverageStatus; label: string }[] = [
-  { value: "copay", label: "Copay" },
-  { value: "noncovered", label: "Non-covered" },
-  { value: "included", label: "Included" },
-];
+type CoverageMoneyField = Exclude<
+  keyof InsuranceCoverageInput,
+  "note" | "frameCoverage" | "lensCoverage" | "materialCoverage" | "coatingCoverage" | "photochromicCoverage"
+>;
+type CoverageMethodField =
+  | "frameCoverage"
+  | "lensCoverage"
+  | "materialCoverage"
+  | "coatingCoverage"
+  | "photochromicCoverage";
 
 export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: InsuranceStepProps) {
   const mode = input.insurance.mode;
+  const coverage = input.insurance.coverage;
+
+  function setCoverage(field: CoverageMoneyField, value: number) {
+    dispatch({ type: "SET_INSURANCE_COVERAGE_FIELD", field, value });
+  }
+
+  function setCoverageMethod(field: CoverageMethodField, method: CoverageMethod) {
+    dispatch({ type: "SET_INSURANCE_COVERAGE_METHOD", field, method });
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>6. Insurance Calculation Method</CardTitle>
+        <CardTitle>7. Insurance</CardTitle>
         <CardDescription>Choose how patient responsibility should be calculated.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div role="radiogroup" aria-label="Insurance calculation method" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <div role="radiogroup" aria-label="Insurance calculation method" className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           {MODES.map((option) => {
             const selected = mode === option.value;
             return (
@@ -68,98 +85,104 @@ export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: Ins
 
         {mode === "retail" ? (
           <p className="text-sm text-navy-600">
-            Patient responsibility equals the retail total after any manual discounts or adjustments from step 7.
+            Patient responsibility equals the retail total after any manual discounts or adjustments below.
           </p>
         ) : null}
 
-        {mode === "allowances" ? (
-          <div className="space-y-4">
+        {mode === "insurance" ? (
+          <div className="space-y-5">
             <Separator />
             <p className="text-sm text-navy-600">
-              Frame allowance uses the value entered in step 1. Enter the lens allowance and any additional
-              insurance credit below.
-            </p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="lens-allowance">Lens allowance</Label>
-                <MoneyField
-                  id="lens-allowance"
-                  valueCents={input.insurance.allowances.lensAllowanceCents}
-                  onChangeCents={(cents) =>
-                    dispatch({ type: "SET_ALLOWANCE_FIELD", field: "lensAllowanceCents", value: cents })
-                  }
-                  aria-label="Lens allowance"
-                />
-              </div>
-              <div>
-                <Label htmlFor="additional-credit">Additional insurance credit</Label>
-                <MoneyField
-                  id="additional-credit"
-                  valueCents={input.insurance.allowances.additionalCreditCents}
-                  onChangeCents={(cents) =>
-                    dispatch({ type: "SET_ALLOWANCE_FIELD", field: "additionalCreditCents", value: cents })
-                  }
-                  aria-label="Additional insurance credit"
-                />
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {mode === "copays" ? (
-          <div className="space-y-4">
-            <Separator />
-            <p className="text-sm text-navy-600">
-              Frame copay uses the value entered in step 1. Mark each item as covered by copay, a non-covered
-              retail charge, or included at no charge.
+              For each category choose how it is billed: a <strong>copay</strong> replaces that item&rsquo;s cost
+              (the patient owes the copay and insurance covers the rest), <strong>covered</strong> means insurance
+              pays it in full, and <strong>retail</strong> lets a frame or lens allowance offset it. Allowances
+              apply to categories billed at retail.
             </p>
 
-            <CopayRow
-              title="Lens & material copay"
-              amountCents={input.insurance.copays.lensCopayCents}
-              onAmountChange={(cents) => dispatch({ type: "SET_COPAY_AMOUNT_FIELD", field: "lensCopayCents", value: cents })}
-              coverage={input.insurance.copays.lensCoverage}
-              onCoverageChange={(v) => dispatch({ type: "SET_COPAY_COVERAGE", field: "lensCoverage", value: v })}
-            />
-            <CopayRow
-              title="Coating copay"
-              amountCents={input.insurance.copays.coatingCopayCents}
-              onAmountChange={(cents) => dispatch({ type: "SET_COPAY_AMOUNT_FIELD", field: "coatingCopayCents", value: cents })}
-              coverage={input.insurance.copays.coatingCoverage}
-              onCoverageChange={(v) => dispatch({ type: "SET_COPAY_COVERAGE", field: "coatingCoverage", value: v })}
-            />
-            <CopayRow
-              title="Photochromic copay"
-              amountCents={input.insurance.copays.photochromicCopayCents}
-              onAmountChange={(cents) =>
-                dispatch({ type: "SET_COPAY_AMOUNT_FIELD", field: "photochromicCopayCents", value: cents })
-              }
-              coverage={input.insurance.copays.photochromicCoverage}
-              onCoverageChange={(v) => dispatch({ type: "SET_COPAY_COVERAGE", field: "photochromicCoverage", value: v })}
-            />
-
-            <div className="rounded-md border border-navy-100 p-3">
-              <p className="mb-2 text-sm font-medium text-navy-700">Frame coverage</p>
-              <SegmentedControl
+            <CoverageGroup title="Frame">
+              <CoverageMethodField
+                id="frame-coverage"
                 label="Frame coverage"
-                options={coverageOptions}
-                value={input.insurance.copays.frameCoverage}
-                onChange={(v) => dispatch({ type: "SET_COPAY_COVERAGE", field: "frameCoverage", value: v })}
+                method={coverage.frameCoverage}
+                onChange={(method) => setCoverageMethod("frameCoverage", method)}
               />
-            </div>
+              <CoverageField
+                id="frame-allowance"
+                label="Frame allowance"
+                valueCents={coverage.frameAllowanceCents}
+                onChangeCents={(cents) => setCoverage("frameAllowanceCents", cents)}
+              />
+            </CoverageGroup>
 
-            <div>
-              <Label htmlFor="other-copay">Other copay</Label>
-              <MoneyField
-                id="other-copay"
-                valueCents={input.insurance.copays.otherCopayCents}
-                onChangeCents={(cents) => dispatch({ type: "SET_COPAY_AMOUNT_FIELD", field: "otherCopayCents", value: cents })}
-                aria-label="Other copay"
+            <CoverageGroup title="Lenses">
+              {/* One coverage decision governs the combined lens + material
+                  price (the material's price for the selected lens type IS the
+                  lens price), so lens and material are never billed twice. */}
+              <CoverageMethodField
+                id="lens-coverage"
+                label="Lens coverage"
+                method={coverage.lensCoverage}
+                onChange={(method) => setCoverageMethod("lensCoverage", method)}
               />
-              <p className="mt-1 text-xs text-navy-400">
-                A flat miscellaneous copay (e.g. an exam copay) always added to patient responsibility.
-              </p>
-            </div>
+              <CoverageField
+                id="lens-allowance"
+                label="Lens allowance"
+                valueCents={coverage.lensAllowanceCents}
+                onChangeCents={(cents) => setCoverage("lensAllowanceCents", cents)}
+              />
+            </CoverageGroup>
+
+            <CoverageGroup title="Upgrades">
+              <CoverageMethodField
+                id="coating-coverage"
+                label="Coating coverage"
+                method={coverage.coatingCoverage}
+                onChange={(method) => setCoverageMethod("coatingCoverage", method)}
+              />
+              <CoverageMethodField
+                id="photochromic-coverage"
+                label="Photochromic coverage"
+                method={coverage.photochromicCoverage}
+                onChange={(method) => setCoverageMethod("photochromicCoverage", method)}
+              />
+              <CoverageField
+                id="other-copay"
+                label="Other copay"
+                valueCents={coverage.otherCopayCents}
+                onChangeCents={(cents) => setCoverage("otherCopayCents", cents)}
+              />
+            </CoverageGroup>
+
+            <CoverageGroup title="Additional coverage">
+              <CoverageField
+                id="additional-allowance"
+                label="Additional insurance allowance or credit"
+                valueCents={coverage.additionalAllowanceCents}
+                onChangeCents={(cents) => setCoverage("additionalAllowanceCents", cents)}
+              />
+              <CoverageField
+                id="other-charge"
+                label="Other non-covered charge"
+                valueCents={coverage.otherChargeCents}
+                onChangeCents={(cents) => setCoverage("otherChargeCents", cents)}
+              />
+              <div className="sm:col-span-2">
+                <Label htmlFor="insurance-note">
+                  Internal note <span className="font-normal text-navy-400">(optional, anonymous only)</span>
+                </Label>
+                <Textarea
+                  id="insurance-note"
+                  placeholder='e.g. "Plan requires prior authorization"'
+                  maxLength={160}
+                  value={coverage.note}
+                  onChange={(e) => dispatch({ type: "SET_INSURANCE_NOTE", value: e.target.value })}
+                  aria-describedby="insurance-note-hint"
+                />
+                <p id="insurance-note-hint" className="mt-1 text-xs text-navy-400">
+                  Do not enter patient names or any identifying information here.
+                </p>
+              </div>
+            </CoverageGroup>
           </div>
         ) : null}
 
@@ -203,32 +226,82 @@ export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: Ins
   );
 }
 
-function CopayRow({
-  title,
-  amountCents,
-  onAmountChange,
-  coverage,
-  onCoverageChange,
-}: {
-  title: string;
-  amountCents: number;
-  onAmountChange: (cents: number) => void;
-  coverage: CoverageStatus;
-  onCoverageChange: (value: CoverageStatus) => void;
-}) {
+function CoverageGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-md border border-navy-100 p-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-medium text-navy-700">{title}</p>
-        <SegmentedControl label={`${title} coverage`} options={coverageOptions} value={coverage} onChange={onCoverageChange} />
+      <p className="mb-3 text-sm font-semibold text-navy-800">{title}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>
+    </div>
+  );
+}
+
+function CoverageField({
+  id,
+  label,
+  valueCents,
+  onChangeCents,
+}: {
+  id: string;
+  label: string;
+  valueCents: number;
+  onChangeCents: (cents: number) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <MoneyField id={id} valueCents={valueCents} onChangeCents={onChangeCents} aria-label={label} />
+    </div>
+  );
+}
+
+const COVERAGE_METHOD_OPTIONS: SegmentedOption<CoverageMethod["type"]>[] = [
+  { value: "retail", label: "Retail" },
+  { value: "copay", label: "Copay" },
+  { value: "covered", label: "Covered" },
+];
+
+/**
+ * Picker for one category's CoverageMethod: Retail (patient pays this item's
+ * retail, which a frame/lens allowance may offset), Copay (the copay replaces
+ * the item's cost — patient owes the copay, insurance covers the remainder —
+ * revealing an amount field), or Covered (fully paid by insurance, patient
+ * owes nothing). Copay and Covered are kept as distinct, explicit states.
+ */
+function CoverageMethodField({
+  id,
+  label,
+  method,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  method: CoverageMethod;
+  onChange: (method: CoverageMethod) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <div id={id} className="space-y-2">
+        <SegmentedControl
+          label={label}
+          options={COVERAGE_METHOD_OPTIONS}
+          value={method.type}
+          onChange={(value) => {
+            if (value === "copay") {
+              onChange({ type: "copay", amountCents: method.type === "copay" ? method.amountCents : 0 });
+            } else {
+              onChange({ type: value });
+            }
+          }}
+        />
+        {method.type === "copay" ? (
+          <MoneyField
+            valueCents={method.amountCents}
+            onChangeCents={(cents) => onChange({ type: "copay", amountCents: cents })}
+            aria-label={`${label} amount`}
+          />
+        ) : null}
       </div>
-      {coverage === "copay" ? (
-        <MoneyField valueCents={amountCents} onChangeCents={onAmountChange} aria-label={title} className="max-w-[180px]" />
-      ) : (
-        <p className="text-xs text-navy-400">
-          {coverage === "included" ? "Covered in full by insurance." : "Patient pays the full retail amount."}
-        </p>
-      )}
     </div>
   );
 }
