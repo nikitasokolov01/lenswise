@@ -19,6 +19,7 @@ function patientBreakdownLines(b: InsuranceBreakdown): Array<{ label: string; ce
     { label: "Lens copay", cents: b.lensCopayCents },
     { label: "Coating copay", cents: b.coatingCopayCents },
     { label: "Photochromic copay", cents: b.photochromicCopayCents },
+    { label: "Tint copay", cents: b.tintCopayCents },
     { label: "Other copay", cents: b.otherCopayCents },
     { label: "Other non-covered charge", cents: b.otherChargeCents },
   ].filter((line) => line.cents > 0);
@@ -34,6 +35,7 @@ function insuranceBreakdownLines(b: InsuranceBreakdown): Array<{ label: string; 
     { label: "Lens covered", cents: b.lensCoveredCents },
     { label: "Coating covered", cents: b.coatingCoveredCents },
     { label: "Photochromic covered", cents: b.photochromicCoveredCents },
+    { label: "Tint covered", cents: b.tintCoveredCents },
   ].filter((line) => line.cents > 0);
 }
 

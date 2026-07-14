@@ -57,10 +57,21 @@ describe("migratePricingConfiguration", () => {
       materialCoverage: { type: "copay", amountCents: 0 },
       coatingCoverage: { type: "copay", amountCents: 200 },
       photochromicCoverage: { type: "copay", amountCents: 300 },
+      tintCoverage: { type: "retail" },
       otherCopayCents: 50,
       additionalAllowanceCents: 100,
       otherChargeCents: 0,
     });
+  });
+
+  it("adds Tint defaults (colors + Retail tint coverage) for a pre-v9 configuration", () => {
+    const migrated = migratePricingConfiguration(v1Fixture()) as Record<string, unknown>;
+    const tints = migrated.tints as Record<string, unknown>;
+    expect(tints).toBeDefined();
+    expect(Array.isArray(tints.colors)).toBe(true);
+    expect((tints.colors as unknown[]).length).toBeGreaterThan(0);
+    const coverage = migrated.defaultInsuranceCoverage as Record<string, unknown>;
+    expect(coverage.tintCoverage).toEqual({ type: "retail" });
   });
 
   it("adds highCylinderSurfacingFeeCents and a per-material appliesToHighCylinderSurfacing flag", () => {

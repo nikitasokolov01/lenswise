@@ -2,6 +2,7 @@ import { generateId } from "@/lib/id";
 import { clampNonNegative, sumCents } from "@/lib/money";
 import { conditionalFeeRules, type ConditionalFeeCandidate } from "@/lib/calculation/rules";
 import { findMaterialPrice } from "@/lib/calculation/materialPricing";
+import { resolveTint } from "@/lib/calculation/tintPricing";
 import type {
   AllowanceBreakdown,
   CoverageMethod,
@@ -21,6 +22,7 @@ import type {
  */
 const CUSTOMER_COATING_LABEL = "Premium Anti-Reflective Coating";
 const CUSTOMER_PHOTOCHROMIC_LABEL = "Photochromic Lens Upgrade";
+const CUSTOMER_TINT_LABEL = "Tinted Lenses";
 
 /**
  * Pure calculation engine for the optical quote calculator.
@@ -146,6 +148,7 @@ export function calculateQuote(
   let lensAndMaterialRetailCents = 0;
   let coatingRetailCents = 0;
   let photochromicRetailCents = 0;
+  let tintRetailCents = 0;
 
   const isProgressive = lensType?.key === "progressive";
 
@@ -263,6 +266,29 @@ export function calculateQuote(
       amountCents: photochromicRetailCents,
       calculationSource: "configured",
     });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Tint (independent of material / coating / photochromic).                 */
+  /* A missing configured price is a validation error (warning), never free.  */
+  /* ---------------------------------------------------------------------- */
+  if (!isFrameOnly && input.tint.type !== "none") {
+    const tintResult = resolveTint(config.tints, input.tint);
+    if (tintResult) {
+      if (tintResult.error) {
+        warnings.push(tintResult.error);
+      } else if (tintResult.priceCents > 0) {
+        tintRetailCents = tintResult.priceCents;
+        lineItems.push({
+          id: generateId("tint"),
+          label: tintResult.internalLabel,
+          customerLabel: CUSTOMER_TINT_LABEL,
+          category: "tint",
+          amountCents: tintRetailCents,
+          calculationSource: "configured",
+        });
+      }
+    }
   }
 
   /* ---------------------------------------------------------------------- */
@@ -432,6 +458,7 @@ export function calculateQuote(
     const lensCat = resolveCategory(coverage.lensCoverage, lensAndMaterialRetailCents);
     const coatingCat = resolveCategory(coverage.coatingCoverage, coatingRetailCents);
     const photochromicCat = resolveCategory(coverage.photochromicCoverage, photochromicRetailCents);
+    const tintCat = resolveCategory(coverage.tintCoverage, tintRetailCents);
 
     // Surfacing fees and manual charges are always patient-owed at retail
     // and are eligible for the lens allowance pool.
@@ -448,6 +475,7 @@ export function calculateQuote(
       lensCat.eligibleRetailCents +
         coatingCat.eligibleRetailCents +
         photochromicCat.eligibleRetailCents +
+        tintCat.eligibleRetailCents +
         feeEligibleCents +
         chargeEligibleCents
     );
@@ -471,12 +499,14 @@ export function calculateQuote(
       frameCat.coveredInsuranceCents +
       lensCat.coveredInsuranceCents +
       coatingCat.coveredInsuranceCents +
-      photochromicCat.coveredInsuranceCents;
+      photochromicCat.coveredInsuranceCents +
+      tintCat.coveredInsuranceCents;
     const copayInsuranceTotalCents =
       frameCat.copayInsuranceCents +
       lensCat.copayInsuranceCents +
       coatingCat.copayInsuranceCents +
-      photochromicCat.copayInsuranceCents;
+      photochromicCat.copayInsuranceCents +
+      tintCat.copayInsuranceCents;
 
     const otherCopayCents = clampNonNegative(coverage.otherCopayCents);
     copayTotalCents =
@@ -484,6 +514,7 @@ export function calculateQuote(
       lensCat.copayPatientCents +
       coatingCat.copayPatientCents +
       photochromicCat.copayPatientCents +
+      tintCat.copayPatientCents +
       otherCopayCents;
 
     nonCoveredChargeCents = clampNonNegative(coverage.otherChargeCents);
@@ -522,10 +553,12 @@ export function calculateQuote(
       lensCoveredCents: lensCat.coveredInsuranceCents,
       coatingCoveredCents: coatingCat.coveredInsuranceCents,
       photochromicCoveredCents: photochromicCat.coveredInsuranceCents,
+      tintCoveredCents: tintCat.coveredInsuranceCents,
       frameCopayCents: frameCat.copayPatientCents,
       lensCopayCents: lensCat.copayPatientCents,
       coatingCopayCents: coatingCat.copayPatientCents,
       photochromicCopayCents: photochromicCat.copayPatientCents,
+      tintCopayCents: tintCat.copayPatientCents,
       otherCopayCents,
       otherChargeCents: nonCoveredChargeCents,
     };

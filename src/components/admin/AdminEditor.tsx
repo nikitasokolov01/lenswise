@@ -9,6 +9,7 @@ import { ProgressiveDesignsSection } from "@/components/admin/ProgressiveDesigns
 import { MaterialsSection } from "@/components/admin/MaterialsSection";
 import { CoatingsSection } from "@/components/admin/CoatingsSection";
 import { PhotochromicSection } from "@/components/admin/PhotochromicSection";
+import { TintsSection } from "@/components/admin/TintsSection";
 import { FeesAndDefaultsSection } from "@/components/admin/FeesAndDefaultsSection";
 import { Button } from "@/components/ui/button";
 import { Save, RotateCcw, CheckCircle2 } from "lucide-react";
@@ -124,6 +125,8 @@ export function AdminEditor() {
           onChangeColors={(items) => setDraft({ ...draft, photochromicColors: items })}
           onChangeSurfacingFee={(cents) => setDraft({ ...draft, transitionsSurfacingFeeCents: cents })}
         />
+
+        <TintsSection tints={draft.tints} onChange={(tints) => setDraft({ ...draft, tints })} />
 
         <FeesAndDefaultsSection
           defaultInsuranceCoverage={draft.defaultInsuranceCoverage}

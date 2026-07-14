@@ -8,7 +8,42 @@ import type {
   PhotochromicProductConfig,
   PricingConfiguration,
   ProgressiveDesignConfig,
+  TintColorConfig,
+  TintConfig,
 } from "@/lib/types";
+
+/** Selectable tint percentages — cosmetic only (percentage does not affect price). */
+export const TINT_PERCENTS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] as const;
+
+function seedTintColor(id: string, name: string, sortOrder: number): TintColorConfig {
+  return {
+    id,
+    name,
+    customerLabel: name,
+    active: true,
+    sortOrder,
+    supportsSolid: true,
+    supportsGradient: true,
+    // Demonstration pricing only — one flat price per tint type, regardless of percentage.
+    solidPriceCents: 4000,
+    gradientPriceCents: 5000,
+  };
+}
+
+/** Seed / restore-defaults tint configuration (also used by the Admin Tints "Restore defaults" button). */
+export function createDefaultTintConfig(): TintConfig {
+  return {
+    solidTintEnabled: true,
+    gradientTintEnabled: true,
+    colors: [
+      seedTintColor("tint-gray", "Gray", 0),
+      seedTintColor("tint-brown", "Brown", 1),
+      seedTintColor("tint-green", "Green", 2),
+      seedTintColor("tint-blue", "Blue", 3),
+      seedTintColor("tint-rose", "Rose", 4),
+    ],
+  };
+}
 
 /** Shorthand for the common case of a fixed-dollar copay coverage method. */
 function copay(amountCents: number): CoverageMethod {
@@ -25,7 +60,7 @@ function copay(amountCents: number): CoverageMethod {
  * industry-standard retail pricing.
  */
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 /**
  * Lens type is purely "what optical design is this lens" (Single Vision /
@@ -349,6 +384,7 @@ export function createDefaultConfiguration(): PricingConfiguration {
     coatings: coatings.map((item) => ({ ...item })),
     photochromicProducts: photochromicProducts.map((item) => ({ ...item })),
     photochromicColors: photochromicColors.map((item) => ({ ...item })),
+    tints: createDefaultTintConfig(),
     transitionsSurfacingFeeCents: 3000,
     highCylinderSurfacingFeeCents: 4500,
     highCylinderThresholdDiopters: -2,
@@ -367,6 +403,7 @@ export function createDefaultConfiguration(): PricingConfiguration {
       materialCoverage: { type: "retail" },
       coatingCoverage: { type: "retail" },
       photochromicCoverage: { type: "retail" },
+      tintCoverage: { type: "retail" },
       otherCopayCents: 0,
       additionalAllowanceCents: 0,
       otherChargeCents: 0,

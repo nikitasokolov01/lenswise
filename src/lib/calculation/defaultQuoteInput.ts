@@ -30,6 +30,12 @@ export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInpu
       productId: null,
       colorId: null,
     },
+    tint: {
+      type: "none",
+      colorId: null,
+      percent: null,
+    },
+    prescriptionDisplayMode: "original",
     prescription: null,
     insurance: {
       mode: "retail",
@@ -44,6 +50,7 @@ export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInpu
         materialCoverage: { ...config.defaultInsuranceCoverage.materialCoverage },
         coatingCoverage: { ...config.defaultInsuranceCoverage.coatingCoverage },
         photochromicCoverage: { ...config.defaultInsuranceCoverage.photochromicCoverage },
+        tintCoverage: { ...config.defaultInsuranceCoverage.tintCoverage },
         otherCopayCents: config.defaultInsuranceCoverage.otherCopayCents,
         additionalAllowanceCents: config.defaultInsuranceCoverage.additionalAllowanceCents,
         otherChargeCents: config.defaultInsuranceCoverage.otherChargeCents,

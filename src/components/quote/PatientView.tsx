@@ -18,6 +18,7 @@ function patientInsuranceLines(b: InsuranceBreakdown): {
       { label: "Lens copay", cents: b.lensCopayCents },
       { label: "Coating copay", cents: b.coatingCopayCents },
       { label: "Photochromic copay", cents: b.photochromicCopayCents },
+      { label: "Tint copay", cents: b.tintCopayCents },
       { label: "Other copay", cents: b.otherCopayCents },
       { label: "Other charge", cents: b.otherChargeCents },
     ].filter((line) => line.cents > 0),
@@ -29,6 +30,7 @@ function patientInsuranceLines(b: InsuranceBreakdown): {
       { label: "Lens covered by insurance", cents: b.lensCoveredCents },
       { label: "Coating covered by insurance", cents: b.coatingCoveredCents },
       { label: "Photochromic covered by insurance", cents: b.photochromicCoveredCents },
+      { label: "Tint covered by insurance", cents: b.tintCoveredCents },
     ].filter((line) => line.cents > 0),
   };
 }

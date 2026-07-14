@@ -29,10 +29,11 @@ export type LensTypeKey = "single_vision" | "progressive" | "bifocal";
 
 /**
  * What the finished eyewear is primarily used for. A single, optional
- * informational selection per quote (never derived from the lens type). It
- * does not affect pricing, insurance, or the surfacing rule; it is shown on
- * the quote surfaces and drives the display-only internal prescription
- * transformation (see deriveUsagePrescription in usageOptions.ts).
+ * informational selection per quote (never derived from the lens type). It is
+ * shown on the quote surfaces but has NO effect on pricing, insurance, the
+ * surfacing rule, or the displayed prescription. (Reading/Computer
+ * prescription calculations are a separate, explicit control — see
+ * PrescriptionDisplayMode and prescriptionDisplay.ts.)
  */
 export type UsageKey =
   | "reading"
@@ -41,6 +42,17 @@ export type UsageKey =
   | "bifocal"
   | "sunglasses"
   | "progressive";
+
+/**
+ * How the applied prescription is DISPLAYED on the Internal Worksheet. This
+ * is quote state only — it never modifies the applied prescription itself.
+ * See derivePrescriptionForDisplay in prescriptionDisplay.ts. "reading" and
+ * "computer" both require an ADD value.
+ */
+export type PrescriptionDisplayMode = "original" | "reading" | "computer";
+
+/** Tint kind on a quote. "none" means no tint (no color/percentage, no price). */
+export type TintType = "none" | "solid" | "gradient";
 
 /**
  * What the patient is ordering on this visit. This is a first-class field on
@@ -91,6 +103,7 @@ export type QuoteLineItemCategory =
   | "material"
   | "coating"
   | "photochromic"
+  | "tint"
   | "fee"
   | "discount"
   | "insurance"
@@ -211,6 +224,30 @@ export interface PhotochromicColorConfig {
 }
 
 /**
+ * One admin-configured tint color. Solid and Gradient each have a single
+ * integer-cents price that does NOT vary by percentage — the selected
+ * percentage is cosmetic and only appears in the displayed description.
+ */
+export interface TintColorConfig {
+  id: string;
+  name: string;
+  /** Customer-facing label (only ever shown when exact technology names are enabled). */
+  customerLabel: string;
+  active: boolean;
+  sortOrder: number;
+  supportsSolid: boolean;
+  supportsGradient: boolean;
+  solidPriceCents: Money;
+  gradientPriceCents: Money;
+}
+
+export interface TintConfig {
+  solidTintEnabled: boolean;
+  gradientTintEnabled: boolean;
+  colors: TintColorConfig[];
+}
+
+/**
  * Office-configured defaults that pre-fill every new quote's unified
  * insurance section. Every value stays fully editable per patient visit.
  * Each of the five real priced categories (frame / base lens / material /
@@ -227,6 +264,7 @@ export interface DefaultInsuranceCoverage {
   materialCoverage: CoverageMethod;
   coatingCoverage: CoverageMethod;
   photochromicCoverage: CoverageMethod;
+  tintCoverage: CoverageMethod;
   otherCopayCents: Money;
   additionalAllowanceCents: Money;
   otherChargeCents: Money;
@@ -254,6 +292,7 @@ export interface PricingConfiguration {
   coatings: CoatingConfig[];
   photochromicProducts: PhotochromicProductConfig[];
   photochromicColors: PhotochromicColorConfig[];
+  tints: TintConfig;
   transitionsSurfacingFeeCents: Money;
   /**
    * Fee applied when either eye's cylinder is at or beyond
@@ -291,6 +330,17 @@ export interface PhotochromicSelection {
 }
 
 /**
+ * Tint selection for one quote. Independent of lens material, coating, and
+ * photochromic. `colorId`/`percent` are only meaningful when `type` is
+ * "solid" or "gradient"; both are null when `type` is "none".
+ */
+export interface TintSelection {
+  type: TintType;
+  colorId: string | null;
+  percent: number | null;
+}
+
+/**
  * One eye's prescription values, entered via controlled sphere/cylinder/
  * axis/add selectors (never free text). Sphere and cylinder are always
  * present once a prescription is applied (0 displays as "SPH"/"CYL"); axis
@@ -325,6 +375,7 @@ export interface InsuranceCoverageInput {
   materialCoverage: CoverageMethod;
   coatingCoverage: CoverageMethod;
   photochromicCoverage: CoverageMethod;
+  tintCoverage: CoverageMethod;
   otherCopayCents: Money;
   additionalAllowanceCents: Money;
   otherChargeCents: Money;
@@ -353,7 +404,7 @@ export interface AdjustmentInput {
 
 export interface QuoteInput {
   orderType: OrderType;
-  /** Optional, single "what these glasses are for" selection. `null` = none chosen. */
+  /** Optional, single "what these glasses are for" selection. `null` = none chosen. Informational only. */
   usage: UsageKey | null;
   frame: FrameSelection;
   lensTypeId: string | null;
@@ -361,6 +412,9 @@ export interface QuoteInput {
   materialId: string | null;
   coatingId: string | null;
   photochromic: PhotochromicSelection;
+  tint: TintSelection;
+  /** How the Internal Worksheet displays the applied prescription (never modifies it). */
+  prescriptionDisplayMode: PrescriptionDisplayMode;
   /**
    * The APPLIED prescription only — never a work-in-progress draft. `null`
    * means no valid prescription has been applied yet. Required (non-null)
@@ -423,11 +477,13 @@ export interface InsuranceBreakdown {
   lensCoveredCents: Money;
   coatingCoveredCents: Money;
   photochromicCoveredCents: Money;
+  tintCoveredCents: Money;
   /* Patient-side: per-category copays (each replaces that category's retail). */
   frameCopayCents: Money;
   lensCopayCents: Money;
   coatingCopayCents: Money;
   photochromicCopayCents: Money;
+  tintCopayCents: Money;
   otherCopayCents: Money;
   /* Patient-side: flat non-covered charge owed in full. */
   otherChargeCents: Money;

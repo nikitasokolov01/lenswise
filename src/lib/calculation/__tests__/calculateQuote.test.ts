@@ -726,4 +726,152 @@ describe("calculateQuote", () => {
     // Patient owes everything at retail, less the frame allowance.
     expect(result.patientResponsibilityCents).toBe(47000 - 13000);
   });
+
+  it("25. Solid tint appears as its own retail line item priced from configuration", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+
+    const input = baseInput(config);
+    input.insurance.mode = "retail";
+    input.tint = { type: "solid", colorId: brown.id, percent: 50 };
+
+    const result = calculateQuote(input, config);
+
+    const tintItem = result.lineItems.find((li) => li.category === "tint");
+    expect(tintItem).toBeDefined();
+    // Seeded flat solid price (percentage does not affect price).
+    expect(tintItem?.amountCents).toBe(4000);
+    expect(tintItem?.label).toBe("Brown Solid Tint — 50%");
+    // Customer-safe label hides the exact tint details.
+    expect(tintItem?.customerLabel).toBe("Tinted Lenses");
+    expect(result.retailTotalCents).toBe(4000);
+    expect(result.patientResponsibilityCents).toBe(4000);
+  });
+
+  it("26. Gradient tint is priced from its own single gradient price", () => {
+    const config = getConfig();
+    const gray = findByName(config.tints.colors, "Gray");
+
+    const input = baseInput(config);
+    input.insurance.mode = "retail";
+    input.tint = { type: "gradient", colorId: gray.id, percent: 70 };
+
+    const result = calculateQuote(input, config);
+
+    const tintItem = result.lineItems.find((li) => li.category === "tint");
+    // Seeded flat gradient price.
+    expect(tintItem?.amountCents).toBe(5000);
+    expect(tintItem?.label).toBe("Gray Gradient Tint — 70%");
+  });
+
+  it("27. the tint price does not change with percentage — only the displayed label does", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+
+    const at20 = baseInput(config);
+    at20.insurance.mode = "retail";
+    at20.tint = { type: "solid", colorId: brown.id, percent: 20 };
+    const result20 = calculateQuote(at20, config);
+    const tint20 = result20.lineItems.find((li) => li.category === "tint");
+
+    const at80 = baseInput(config);
+    at80.insurance.mode = "retail";
+    at80.tint = { type: "solid", colorId: brown.id, percent: 80 };
+    const result80 = calculateQuote(at80, config);
+    const tint80 = result80.lineItems.find((li) => li.category === "tint");
+
+    expect(tint20?.amountCents).toBe(tint80?.amountCents);
+    expect(result20.retailTotalCents).toBe(result80.retailTotalCents);
+    expect(tint20?.label).toBe("Brown Solid Tint — 20%");
+    expect(tint80?.label).toBe("Brown Solid Tint — 80%");
+  });
+
+  it("28. a disabled tint color is not priced and surfaces a warning", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+    brown.active = false;
+
+    const input = baseInput(config);
+    input.insurance.mode = "retail";
+    input.tint = { type: "solid", colorId: brown.id, percent: 50 };
+
+    const result = calculateQuote(input, config);
+
+    expect(result.lineItems.some((li) => li.category === "tint")).toBe(false);
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("29. Tint Retail — the patient owes the tint retail under insurance", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+
+    const input = baseInput(config);
+    input.tint = { type: "solid", colorId: brown.id, percent: 50 }; // 4000
+    input.insurance.mode = "insurance";
+    input.insurance.coverage.tintCoverage = { type: "retail" };
+    input.insurance.coverage.lensAllowanceCents = 0;
+
+    const result = calculateQuote(input, config);
+
+    expect(result.patientResponsibilityCents).toBe(4000);
+    expect(result.copayTotalCents).toBe(0);
+  });
+
+  it("30. Tint Copay — patient owes the copay, insurance covers the remainder (never copay-plus-retail)", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+
+    const input = baseInput(config);
+    input.tint = { type: "solid", colorId: brown.id, percent: 50 }; // 4000
+    input.insurance.mode = "insurance";
+    input.insurance.coverage.tintCoverage = { type: "copay", amountCents: 500 };
+    input.insurance.coverage.lensAllowanceCents = 0;
+
+    const result = calculateQuote(input, config);
+
+    expect(result.copayTotalCents).toBe(500);
+    expect(result.patientResponsibilityCents).toBe(500);
+    expect(result.insuranceContributionCents).toBe(3500);
+    expect(result.insuranceBreakdown?.tintCopayCents).toBe(500);
+  });
+
+  it("31. Tint Covered — patient owes $0 and insurance covers the full tint retail", () => {
+    const config = getConfig();
+    const brown = findByName(config.tints.colors, "Brown");
+
+    const input = baseInput(config);
+    input.tint = { type: "solid", colorId: brown.id, percent: 50 }; // 4000
+    input.insurance.mode = "insurance";
+    input.insurance.coverage.tintCoverage = { type: "covered" };
+
+    const result = calculateQuote(input, config);
+
+    expect(result.patientResponsibilityCents).toBe(0);
+    expect(result.insuranceContributionCents).toBeGreaterThanOrEqual(4000);
+    expect(result.insuranceBreakdown?.tintCoveredCents).toBe(4000);
+  });
+
+  it("32. tint 'none' adds no tint line item or price", () => {
+    const config = getConfig();
+    const input = baseInput(config);
+    input.tint = { type: "none", colorId: null, percent: null };
+
+    const result = calculateQuote(input, config);
+
+    expect(result.lineItems.some((li) => li.category === "tint")).toBe(false);
+    expect(result.retailTotalCents).toBe(0);
+  });
+
+  it("33. a tint selection referencing a deleted color is not priced (safe validation error, not free)", () => {
+    const config = getConfig();
+    const input = baseInput(config);
+    input.insurance.mode = "retail";
+    input.tint = { type: "solid", colorId: "tint-does-not-exist", percent: 50 };
+
+    const result = calculateQuote(input, config);
+
+    expect(result.lineItems.some((li) => li.category === "tint")).toBe(false);
+    expect(result.retailTotalCents).toBe(0);
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
 });

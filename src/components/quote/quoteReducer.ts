@@ -7,31 +7,40 @@ import type {
   InsuranceCoverageInput,
   InsuranceMode,
   OrderType,
+  PrescriptionDisplayMode,
   PrescriptionInput,
   PricingConfiguration,
   QuoteInput,
+  TintType,
   UsageKey,
 } from "@/lib/types";
 import { createDefaultQuoteInput } from "@/lib/calculation/defaultQuoteInput";
 
-/** The plain-dollar-amount fields on InsuranceCoverageInput (allowances, other copay/charge) — everything except the 5 CoverageMethod category fields and the note. */
+/** The plain-dollar-amount fields on InsuranceCoverageInput (allowances, other copay/charge) — everything except the CoverageMethod category fields and the note. */
 type InsuranceCoverageMoneyField = Exclude<
   keyof InsuranceCoverageInput,
-  "note" | "frameCoverage" | "lensCoverage" | "materialCoverage" | "coatingCoverage" | "photochromicCoverage"
+  | "note"
+  | "frameCoverage"
+  | "lensCoverage"
+  | "materialCoverage"
+  | "coatingCoverage"
+  | "photochromicCoverage"
+  | "tintCoverage"
 >;
 
-/** The 5 per-category CoverageMethod fields on InsuranceCoverageInput. */
+/** The per-category CoverageMethod fields on InsuranceCoverageInput. */
 type InsuranceCoverageMethodField =
   | "frameCoverage"
   | "lensCoverage"
   | "materialCoverage"
   | "coatingCoverage"
-  | "photochromicCoverage";
+  | "photochromicCoverage"
+  | "tintCoverage";
 
 /** Fields cleared whenever the applied prescription is removed (Clear Prescription, or switching to Frame Only). */
 function clearedLensSelections(): Pick<
   QuoteInput,
-  "lensTypeId" | "progressiveDesignId" | "materialId" | "coatingId" | "photochromic"
+  "lensTypeId" | "progressiveDesignId" | "materialId" | "coatingId" | "photochromic" | "tint" | "prescriptionDisplayMode"
 > {
   return {
     lensTypeId: null,
@@ -39,6 +48,8 @@ function clearedLensSelections(): Pick<
     materialId: null,
     coatingId: null,
     photochromic: { productId: null, colorId: null },
+    tint: { type: "none", colorId: null, percent: null },
+    prescriptionDisplayMode: "original",
   };
 }
 
@@ -52,6 +63,11 @@ export type QuoteAction =
   | { type: "SET_COATING"; coatingId: string | null }
   | { type: "SET_PHOTOCHROMIC_PRODUCT"; productId: string | null; requiresColor: boolean }
   | { type: "SET_PHOTOCHROMIC_COLOR"; colorId: string | null }
+  | { type: "SET_TINT_TYPE"; tintType: TintType }
+  | { type: "SET_TINT_COLOR"; colorId: string | null }
+  | { type: "SET_TINT_PERCENT"; percent: number | null }
+  | { type: "CLEAR_TINT" }
+  | { type: "SET_PRESCRIPTION_DISPLAY_MODE"; mode: PrescriptionDisplayMode }
   | { type: "APPLY_PRESCRIPTION"; prescription: PrescriptionInput }
   | { type: "CLEAR_PRESCRIPTION" }
   | { type: "SET_INSURANCE_MODE"; mode: InsuranceMode }
@@ -127,6 +143,22 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
       };
     case "SET_PHOTOCHROMIC_COLOR":
       return { ...state, photochromic: { ...state.photochromic, colorId: action.colorId } };
+    case "SET_TINT_TYPE":
+      // Selecting "None" clears the color and percentage (and, via the
+      // calculation engine, removes any tint pricing). Switching between
+      // Solid/Gradient keeps the chosen color and percentage.
+      return action.tintType === "none"
+        ? { ...state, tint: { type: "none", colorId: null, percent: null } }
+        : { ...state, tint: { ...state.tint, type: action.tintType } };
+    case "SET_TINT_COLOR":
+      return { ...state, tint: { ...state.tint, colorId: action.colorId } };
+    case "SET_TINT_PERCENT":
+      return { ...state, tint: { ...state.tint, percent: action.percent } };
+    case "CLEAR_TINT":
+      return { ...state, tint: { type: "none", colorId: null, percent: null } };
+    case "SET_PRESCRIPTION_DISPLAY_MODE":
+      // Display-only: never touches the applied `prescription`.
+      return { ...state, prescriptionDisplayMode: action.mode };
     case "APPLY_PRESCRIPTION":
       // Committing a validated prescription is the ONLY way it ever enters
       // quote state — see PrescriptionStep.tsx, which keeps in-progress

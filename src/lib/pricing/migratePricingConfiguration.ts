@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION } from "@/lib/pricing/seedConfiguration";
+import { SCHEMA_VERSION, createDefaultTintConfig } from "@/lib/pricing/seedConfiguration";
 
 /**
  * Migrates a raw, previously-persisted pricing configuration object forward
@@ -88,6 +88,12 @@ export function migratePricingConfiguration(raw: unknown): unknown {
   }
   if (version < 8) {
     migrated = migrateV7ToV8(migrated);
+  }
+  if (version < 9) {
+    migrated = migrateV8ToV9(migrated);
+  }
+  if (version < 10) {
+    migrated = migrateV9ToV10(migrated);
   }
 
   return migrated;
@@ -332,6 +338,72 @@ function migrateV7ToV8(obj: Record<string, unknown>): Record<string, unknown> {
     migrated.showExactTechnologyNamesOnCustomerQuotes = false;
   }
   migrated.schemaVersion = 8;
+  return migrated;
+}
+
+/**
+ * v8 -> v9:
+ *  - Adds full Tint support with demonstration defaults (`tints`) when a
+ *    stored configuration has none, and a default `tintCoverage` of Retail on
+ *    `defaultInsuranceCoverage`. Existing (unrelated) pricing is untouched; a
+ *    config that somehow already has a `tints` object is left as-is.
+ */
+function migrateV8ToV9(obj: Record<string, unknown>): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...obj };
+
+  if (typeof migrated.tints !== "object" || migrated.tints === null) {
+    migrated.tints = createDefaultTintConfig();
+  }
+
+  const coverage = asRecord(migrated.defaultInsuranceCoverage);
+  if (typeof coverage.tintCoverage !== "object" || coverage.tintCoverage === null) {
+    migrated.defaultInsuranceCoverage = { ...coverage, tintCoverage: { type: "retail" } };
+  }
+
+  migrated.schemaVersion = 9;
+  return migrated;
+}
+
+/** Collapses a legacy per-percentage price map into a single representative price (prefers 100%, else the first value). */
+function flattenTintPriceMap(value: unknown): number {
+  const map = asRecord(value);
+  if (typeof map["100"] === "number") return map["100"];
+  for (const entry of Object.values(map)) {
+    if (typeof entry === "number") return entry;
+  }
+  return 0;
+}
+
+/**
+ * v9 -> v10:
+ *  - Tint pricing no longer varies by percentage. Each color's legacy
+ *    per-percentage price maps (`solidPricesByPercentCents` /
+ *    `gradientPricesByPercentCents`) collapse to a single `solidPriceCents` /
+ *    `gradientPriceCents`. The selected percentage remains cosmetic. A color
+ *    already in the new shape is left unchanged.
+ */
+function migrateV9ToV10(obj: Record<string, unknown>): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...obj };
+  const tints = asRecord(migrated.tints);
+  if (Array.isArray(tints.colors)) {
+    migrated.tints = {
+      ...tints,
+      colors: tints.colors.map((entry) => {
+        const color = asRecord(entry);
+        const next: Record<string, unknown> = { ...color };
+        if (typeof next.solidPriceCents !== "number") {
+          next.solidPriceCents = flattenTintPriceMap(color.solidPricesByPercentCents);
+        }
+        if (typeof next.gradientPriceCents !== "number") {
+          next.gradientPriceCents = flattenTintPriceMap(color.gradientPricesByPercentCents);
+        }
+        delete next.solidPricesByPercentCents;
+        delete next.gradientPricesByPercentCents;
+        return next;
+      }),
+    };
+  }
+  migrated.schemaVersion = 10;
   return migrated;
 }
 

@@ -29,14 +29,21 @@ const MODES: { value: InsuranceMode; label: string; description: string }[] = [
 
 type CoverageMoneyField = Exclude<
   keyof InsuranceCoverageInput,
-  "note" | "frameCoverage" | "lensCoverage" | "materialCoverage" | "coatingCoverage" | "photochromicCoverage"
+  | "note"
+  | "frameCoverage"
+  | "lensCoverage"
+  | "materialCoverage"
+  | "coatingCoverage"
+  | "photochromicCoverage"
+  | "tintCoverage"
 >;
 type CoverageMethodField =
   | "frameCoverage"
   | "lensCoverage"
   | "materialCoverage"
   | "coatingCoverage"
-  | "photochromicCoverage";
+  | "photochromicCoverage"
+  | "tintCoverage";
 
 export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: InsuranceStepProps) {
   const mode = input.insurance.mode;
@@ -145,6 +152,14 @@ export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: Ins
                 method={coverage.photochromicCoverage}
                 onChange={(method) => setCoverageMethod("photochromicCoverage", method)}
               />
+              {input.tint.type !== "none" ? (
+                <CoverageMethodField
+                  id="tint-coverage"
+                  label="Tint coverage"
+                  method={coverage.tintCoverage}
+                  onChange={(method) => setCoverageMethod("tintCoverage", method)}
+                />
+              ) : null}
               <CoverageField
                 id="other-copay"
                 label="Other copay"

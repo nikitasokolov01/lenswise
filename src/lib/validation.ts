@@ -90,6 +90,24 @@ const photochromicColorConfigSchema = z.object({
   sortOrder: z.number(),
 });
 
+const tintColorConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  customerLabel: z.string(),
+  active: z.boolean(),
+  sortOrder: z.number(),
+  supportsSolid: z.boolean(),
+  supportsGradient: z.boolean(),
+  solidPriceCents: z.number().int(),
+  gradientPriceCents: z.number().int(),
+});
+
+const tintConfigSchema = z.object({
+  solidTintEnabled: z.boolean(),
+  gradientTintEnabled: z.boolean(),
+  colors: z.array(tintColorConfigSchema),
+});
+
 const defaultInsuranceCoverageSchema = z.object({
   frameCoverage: coverageMethodSchema,
   frameAllowanceCents: z.number().int(),
@@ -98,6 +116,7 @@ const defaultInsuranceCoverageSchema = z.object({
   materialCoverage: coverageMethodSchema,
   coatingCoverage: coverageMethodSchema,
   photochromicCoverage: coverageMethodSchema,
+  tintCoverage: coverageMethodSchema,
   otherCopayCents: z.number().int(),
   additionalAllowanceCents: z.number().int(),
   otherChargeCents: z.number().int(),
@@ -114,6 +133,7 @@ export const pricingConfigurationSchema = z.object({
   coatings: z.array(coatingConfigSchema),
   photochromicProducts: z.array(photochromicProductConfigSchema),
   photochromicColors: z.array(photochromicColorConfigSchema),
+  tints: tintConfigSchema,
   transitionsSurfacingFeeCents: z.number().int(),
   highCylinderSurfacingFeeCents: z.number().int(),
   highCylinderThresholdDiopters: z.number(),

@@ -14,9 +14,9 @@ interface UsageStepProps {
 
 /**
  * Optional "what these glasses are for" selection — one usage per quote. It
- * is informational only: it never changes pricing, insurance, or the
- * surfacing rule. On the Internal Order Worksheet a Reading usage also drives
- * a display-only near-Rx transformation (see deriveUsagePrescription).
+ * is informational only: it never changes pricing, insurance, the surfacing
+ * rule, or the displayed prescription. (Reading/Computer prescription
+ * calculations are a separate control in the Prescription step.)
  */
 export function UsageStep({ input, dispatch }: UsageStepProps) {
   const { usage } = input;

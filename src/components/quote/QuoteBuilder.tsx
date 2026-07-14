@@ -12,6 +12,7 @@ import { MaterialStep } from "@/components/quote/MaterialStep";
 import { PrescriptionStep } from "@/components/quote/PrescriptionStep";
 import { CoatingStep } from "@/components/quote/CoatingStep";
 import { PhotochromicStep } from "@/components/quote/PhotochromicStep";
+import { TintStep } from "@/components/quote/TintStep";
 import { InsuranceStep } from "@/components/quote/InsuranceStep";
 import { AdjustmentsStep } from "@/components/quote/AdjustmentsStep";
 import { QuoteSummary } from "@/components/quote/QuoteSummary";
@@ -148,6 +149,13 @@ function QuoteBuilderReady({
             colors={config.photochromicColors}
             lensType={lensType}
             transitionsSurfacingFeeCents={config.transitionsSurfacingFeeCents}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
+          />
+          <TintStep
+            input={input}
+            dispatch={dispatch}
+            tints={config.tints}
             disabled={lensControlsDisabled}
             disabledReason={lensControlsDisabledReason}
           />

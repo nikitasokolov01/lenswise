@@ -14,6 +14,7 @@ import {
   isValidPrescription,
   formatPrescriptionSummaryLines,
 } from "@/lib/prescriptionOptions";
+import { prescriptionDisplayLabel, prescriptionHasAdd, toggledDisplayMode } from "@/lib/prescriptionDisplay";
 import type { PrescriptionEyeValues, PrescriptionInput, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
@@ -34,7 +35,8 @@ interface PrescriptionStepProps {
  * entered here is ever persisted to LocalStorage or sent anywhere.
  */
 export function PrescriptionStep({ input, dispatch }: PrescriptionStepProps) {
-  const { orderType, prescription } = input;
+  const { orderType, prescription, prescriptionDisplayMode } = input;
+  const hasAdd = prescriptionHasAdd(prescription);
 
   const [draft, setDraft] = useState<PrescriptionInput>(() => prescription ?? createBlankPrescription());
   const [isEditing, setIsEditing] = useState(prescription === null);
@@ -162,6 +164,50 @@ export function PrescriptionStep({ input, dispatch }: PrescriptionStepProps) {
               <Button variant="secondary" onClick={handleClear}>
                 Clear Prescription
               </Button>
+            </div>
+
+            <div className="rounded-md border border-navy-100 p-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-navy-500">
+                Prescription calculation (Internal Worksheet display only)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={prescriptionDisplayMode === "reading" ? "accent" : "secondary"}
+                  disabled={!hasAdd}
+                  aria-pressed={prescriptionDisplayMode === "reading"}
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_PRESCRIPTION_DISPLAY_MODE",
+                      mode: toggledDisplayMode(prescriptionDisplayMode, "reading"),
+                    })
+                  }
+                >
+                  Reading Calculation
+                </Button>
+                <Button
+                  variant={prescriptionDisplayMode === "computer" ? "accent" : "secondary"}
+                  disabled={!hasAdd}
+                  aria-pressed={prescriptionDisplayMode === "computer"}
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_PRESCRIPTION_DISPLAY_MODE",
+                      mode: toggledDisplayMode(prescriptionDisplayMode, "computer"),
+                    })
+                  }
+                >
+                  Computer Calculation
+                </Button>
+              </div>
+              {!hasAdd ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  An ADD value is required to calculate a reading or computer prescription.
+                </p>
+              ) : prescriptionDisplayMode !== "original" ? (
+                <p className="mt-2 text-xs text-navy-500">
+                  The Internal Worksheet will show the {prescriptionDisplayLabel(prescriptionDisplayMode)}. The applied
+                  prescription above is never changed.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}

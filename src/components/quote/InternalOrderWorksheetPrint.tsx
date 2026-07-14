@@ -1,6 +1,7 @@
 import { formatCents } from "@/lib/money";
 import { formatPrescriptionSummaryLines } from "@/lib/prescriptionOptions";
-import { deriveUsagePrescription, formatUsageLabel } from "@/lib/usageOptions";
+import { derivePrescriptionForDisplay } from "@/lib/prescriptionDisplay";
+import { formatUsageLabel } from "@/lib/usageOptions";
 import type { CoverageMethod, PricingConfiguration, QuoteCalculationResult, QuoteInput } from "@/lib/types";
 
 /** Renders a CoverageMethod as a short staff-facing label, e.g. "Copay $25.00", "Covered", or "Retail". */
@@ -45,11 +46,23 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
   const discountItems = result.lineItems.filter((li) => li.category === "discount");
   const coverage = input.insurance.coverage;
 
-  // Exact (staff-facing) usage label, and the display-only prescription
-  // derived from the applied one for this usage (e.g. Reading folds ADD into
-  // sphere). The applied prescription in quote state is never changed.
+  // Exact (staff-facing) usage label (informational only), and the single
+  // display-only prescription for the selected display mode. The applied
+  // prescription in quote state is never changed.
   const usageLabel = formatUsageLabel(input.usage);
-  const derived = deriveUsagePrescription(input.prescription, input.usage);
+  const rxDisplay = input.prescription
+    ? derivePrescriptionForDisplay(input.prescription, input.prescriptionDisplayMode)
+    : null;
+
+  const tintColor = input.tint.colorId
+    ? config.tints.colors.find((c) => c.id === input.tint.colorId)
+    : undefined;
+  const tintDescription =
+    input.tint.type === "none"
+      ? "None"
+      : `${tintColor?.name ?? "—"} ${input.tint.type === "solid" ? "Solid" : "Gradient"} Tint${
+          input.tint.percent != null ? ` — ${input.tint.percent}%` : ""
+        }`;
 
   return (
     <div className="hidden print:block print:p-8 print:text-black" aria-hidden="true">
@@ -84,28 +97,24 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
                   : "None"
               }
             />
+            <Row label="Tint" value={tintDescription} />
           </tbody>
         </table>
       </section>
 
-      {input.prescription ? (
+      {rxDisplay ? (
         <section className="mt-4">
-          <h3 className="text-sm font-semibold uppercase text-gray-700">Prescription (as entered)</h3>
+          <h3 className="text-sm font-semibold uppercase text-gray-700">{rxDisplay.label}</h3>
+          {rxDisplay.mode !== "original" ? (
+            <p className="mt-1 text-xs text-gray-600">
+              Display-only calculation — the entered prescription is unchanged.
+              {rxDisplay.mode === "reading"
+                ? " The full ADD has been combined into each eye's sphere."
+                : " Half the ADD has been combined into each eye's sphere."}
+            </p>
+          ) : null}
           <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-6">
-            {formatPrescriptionSummaryLines(input.prescription).join("\n")}
-          </pre>
-        </section>
-      ) : null}
-
-      {input.prescription && derived && derived.transformed ? (
-        <section className="mt-4">
-          <h3 className="text-sm font-semibold uppercase text-gray-700">Usage: {derived.usageLabel}</h3>
-          <p className="mt-1 text-xs text-gray-600">
-            Display-only lens prescription for this usage — the entered prescription above is unchanged. The full ADD
-            has been combined into each eye&apos;s sphere.
-          </p>
-          <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-6">
-            {formatPrescriptionSummaryLines(derived.prescription).join("\n")}
+            {formatPrescriptionSummaryLines(rxDisplay.prescription).join("\n")}
           </pre>
         </section>
       ) : null}
@@ -176,6 +185,9 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
                 <Row label="Material coverage" value={formatCoverageMethod(coverage.materialCoverage)} />
                 <Row label="Coating coverage" value={formatCoverageMethod(coverage.coatingCoverage)} />
                 <Row label="Photochromic coverage" value={formatCoverageMethod(coverage.photochromicCoverage)} />
+                {input.tint.type !== "none" ? (
+                  <Row label="Tint coverage" value={formatCoverageMethod(coverage.tintCoverage)} />
+                ) : null}
                 <Row label="Other copay" value={formatCents(coverage.otherCopayCents)} />
                 <Row label="Additional allowance/credit" value={formatCents(coverage.additionalAllowanceCents)} />
                 <Row label="Other non-covered charge" value={formatCents(coverage.otherChargeCents)} />
