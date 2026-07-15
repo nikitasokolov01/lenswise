@@ -2,7 +2,7 @@
   "name": "lenswise",
   "version": "0.1.0",
   "private": true,
-  "description": "LensWise: an anonymous optical quote builder proof of concept.",
+  "description": "LensWise: a multi-tenant optical quote builder SaaS (Next.js + Supabase).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,6 +13,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.383.0",
@@ -30,6 +32,7 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.5",
     "postcss": "^8.4.38",
+    "supabase": "^2.109.1",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"

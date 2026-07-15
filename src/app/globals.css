@@ -43,7 +43,33 @@ textarea {
   }
 
   @page {
-    size: auto;
-    margin: 12mm;
+    size: Letter portrait;
+    margin: 6mm;
+  }
+
+  .internal-print {
+    zoom: 0.80;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .internal-print section,
+  .internal-print table,
+  .internal-print tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .internal-print table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .internal-print td,
+  .internal-print th {
+    padding-top: 1px;
+    padding-bottom: 1px;
+    overflow-wrap: anywhere;
   }
 }

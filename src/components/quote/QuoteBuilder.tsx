@@ -40,7 +40,25 @@ function QuoteBuilderSkeleton() {
 }
 
 export function QuoteBuilder() {
-  const { configuration, isLoading } = usePricingConfiguration();
+  const { configuration, isLoading, error, reload } = usePricingConfiguration();
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+          <h2 className="text-lg font-semibold text-red-800">Couldn&apos;t load your pricing</h2>
+          <p className="mt-2 text-sm text-red-700">{error}</p>
+          <button
+            type="button"
+            onClick={() => reload()}
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-navy-900 px-4 text-sm font-medium text-white"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !configuration) {
     return <QuoteBuilderSkeleton />;

@@ -29,15 +29,31 @@ function AdminSkeleton() {
 }
 
 export function AdminEditor() {
-  const { configuration, isLoading, save, resetToDefaults } = usePricingConfiguration();
+  const { configuration, isLoading, error, save, resetToDefaults, reload } = usePricingConfiguration();
   const [draft, setDraft] = useState<PricingConfiguration | null>(null);
   const [savedMessageVisible, setSavedMessageVisible] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (configuration && !draft) {
       setDraft(configuration);
     }
   }, [configuration, draft]);
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+          <h2 className="text-lg font-semibold text-red-800">Couldn&apos;t load pricing</h2>
+          <p className="mt-2 text-sm text-red-700">{error}</p>
+          <Button className="mt-4" size="sm" onClick={() => reload()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || !draft) {
     return <AdminSkeleton />;
@@ -47,17 +63,30 @@ export function AdminEditor() {
 
   async function handleSave() {
     if (!draft) return;
-    await save(draft);
-    setSavedMessageVisible(true);
-    setTimeout(() => setSavedMessageVisible(false), 2500);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await save(draft);
+      setSavedMessageVisible(true);
+      setTimeout(() => setSavedMessageVisible(false), 2500);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Save failed. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleRestoreDefaults() {
     if (!window.confirm("Restore demonstration default pricing? This replaces all current pricing configuration.")) {
       return;
     }
-    const defaults = await resetToDefaults();
-    setDraft(defaults);
+    setSaveError(null);
+    try {
+      const defaults = await resetToDefaults();
+      setDraft(defaults);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not restore defaults.");
+    }
   }
 
   return (
@@ -68,20 +97,26 @@ export function AdminEditor() {
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Admin Pricing</h1>
           <p className="mt-1 text-sm text-navy-500">
-            Pricing changes are stored only in this browser for the proof of concept.
+            Pricing is saved to your organization and shared with every employee, across devices.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={handleRestoreDefaults}>
+          <Button variant="secondary" size="sm" onClick={handleRestoreDefaults} disabled={saving}>
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Restore demonstration defaults
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={!isDirty}>
+          <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
             {savedMessageVisible ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
-            {savedMessageVisible ? "Saved" : "Save changes"}
+            {saving ? "Saving…" : savedMessageVisible ? "Saved" : "Save changes"}
           </Button>
         </div>
       </div>
+
+      {saveError ? (
+        <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {saveError}
+        </p>
+      ) : null}
 
       {isDirty ? (
         <p className="mb-4 text-sm text-amber-800" role="status">

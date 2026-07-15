@@ -1,9 +1,46 @@
 # LensWise — Optical Quote Builder
 
-A proof-of-concept, in-office optical quote builder. An optician configures a pair
-of glasses (frame, lens type, material, coating, photochromic option) in front of a
+A multi-tenant SaaS, in-office optical quote builder. An optician configures a pair
+of glasses (frame, lens type, material, coating, photochromic option, tint) in front of a
 patient and instantly sees a clear, itemized price breakdown, including retail total,
 insurance contribution, discounts, and final patient responsibility.
+
+## Multi-tenant SaaS architecture (Supabase)
+
+LensWise runs on **Next.js + Supabase (Auth, Postgres, Row Level Security) + Vercel**.
+Each optical office is its own **Organization** and is completely isolated from every
+other organization by database-level RLS — not by frontend checks.
+
+- **Roles.** Within an org: `Owner` (full access), `Admin` (manage pricing + employees),
+  `Staff` (quote builder only). Platform-level: `Super Admin` — bootstrapped once from
+  the server-side `SUPER_ADMIN_EMAIL`; there is **no UI to self-promote**.
+- **Registration is not public.** A new org can only be created by redeeming a
+  cryptographically secure **Registration Key** (`LW-XXXX-XXXX-XXXX-XXXX`) issued by the
+  Super Admin. Keys are stored hashed (SHA-256), shown once, and support labels,
+  expiration, max/one-time uses, revocation, and recorded redemptions.
+- **Atomic onboarding.** Redeeming a key creates the auth account, organization, owner
+  membership, org settings, and a copy of the default LensWise pricing in one
+  transaction (`redeem_key_and_create_org`); any failure rolls back.
+- **Pricing persistence.** Pricing lives in `pricing_configurations.config` (JSONB) per
+  organization, using the **existing `PricingConfiguration` schema and versioned
+  migrations**. The `SupabasePricingRepository` implements the same
+  `PricingRepository` interface the LocalStorage POC used, so the calculation engine,
+  reducer, quote builder, and Admin Pricing UI are unchanged — only persistence changed.
+- **Isolation & safety.** RLS policies scope every table to the member's organization;
+  disabled organizations are blocked from reading/writing pricing even with a valid
+  session. All privileged operations (key generation, org disable/enable, Super Admin
+  bootstrap) use the server-only service-role key, which is never exposed to the browser.
+- **Audit log.** Pricing changes, role changes, key creation, org creation, and org
+  disable/enable are recorded (never passwords, tokens, or secrets).
+
+See **[docs/SUPABASE_SETUP.md](./docs/SUPABASE_SETUP.md)** and
+**[docs/VERCEL_DEPLOYMENT.md](./docs/VERCEL_DEPLOYMENT.md)** for setup, and
+`.env.example` for required variables. Database migrations are in
+`supabase/migrations/`.
+
+---
+
+### The quote builder (unchanged core)
 
 **This is an anonymous tool.** It does not collect, request, or store patient names,
 dates of birth, prescriptions, insurance member IDs, phone numbers, addresses, medical

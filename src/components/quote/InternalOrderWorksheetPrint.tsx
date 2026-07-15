@@ -65,7 +65,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         }`;
 
   return (
-    <div className="hidden print:block print:p-8 print:text-black" aria-hidden="true">
+    <div className="internal-print hidden print:block print:p-2 print:text-[11px] print:leading-tight print:text-black" aria-hidden="true">
       <div className="flex items-baseline justify-between border-b-2 border-black pb-2">
         <h1 className="text-2xl font-bold">{config.officeName}</h1>
         <p className="text-sm">
@@ -76,7 +76,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         Internal Order Worksheet — not for patient
       </h2>
 
-      <section className="mt-4">
+      <section className="mt-2 print:mt-1">
         <h3 className="text-sm font-semibold uppercase text-gray-700">Exact products</h3>
         <table className="mt-1 w-full border-collapse text-sm">
           <tbody>
@@ -103,7 +103,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
       </section>
 
       {rxDisplay ? (
-        <section className="mt-4">
+        <section className="mt-2 print:mt-1">
           <h3 className="text-sm font-semibold uppercase text-gray-700">{rxDisplay.label}</h3>
           {rxDisplay.mode !== "original" ? (
             <p className="mt-1 text-xs text-gray-600">
@@ -119,7 +119,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         </section>
       ) : null}
 
-      <section className="mt-4">
+      <section className="mt-2 print:mt-1">
         <h3 className="text-sm font-semibold uppercase text-gray-700">Pricing</h3>
         <table className="mt-1 w-full border-collapse text-sm">
           <thead>
@@ -149,7 +149,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
       </section>
 
       {result.surfacingFeeReasons.length > 0 ? (
-        <section className="mt-4">
+        <section className="mt-2 print:mt-1">
           <h3 className="text-sm font-semibold uppercase text-gray-700">Surfacing fee eligibility</h3>
           <table className="mt-1 w-full border-collapse text-sm">
             <tbody>
@@ -171,7 +171,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         </section>
       ) : null}
 
-      <section className="mt-4">
+      <section className="mt-2 print:mt-1">
         <h3 className="text-sm font-semibold uppercase text-gray-700">Insurance</h3>
         <table className="mt-1 w-full border-collapse text-sm">
           <tbody>
@@ -210,13 +210,14 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         </table>
       </section>
 
-      <div className="mt-4 border-2 border-black p-3">
+      <div className="mt-2 border-2 border-black p-2 print:mt-1 print:p-1">
         <p className="text-sm font-semibold uppercase">Patient Responsibility</p>
-        <p className="text-3xl font-bold">{formatCents(result.patientResponsibilityCents)}</p>
+        <p className="text-3xl font-bold print:text-2xl">{formatCents(result.patientResponsibilityCents)}</p>
       </div>
-
+      
+      <div className="internal-print hidden print:block print:p-2 print:text-[15px] print:leading-tight print:text-black" aria-hidden="true"></div>
       {result.warnings.length > 0 ? (
-        <section className="mt-4">
+        <section className="mt-2 print:mt-1">
           <h3 className="text-sm font-semibold uppercase text-gray-700">Warnings</h3>
           <ul className="mt-1 list-disc pl-5 text-sm">
             {result.warnings.map((warning, i) => (
