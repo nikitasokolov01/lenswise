@@ -35,6 +35,25 @@ export async function updateFullNameAction(_prev: AccountState, formData: FormDa
   return { ok: true };
 }
 
+/**
+ * Persist the signed-in user's theme preference (light / dark / system) to
+ * their profile. Called from the account menu; the client also mirrors the
+ * value into localStorage so the choice survives before the account sync and
+ * on unauthenticated pages. Best-effort: a failure here does not disrupt the UI.
+ */
+export async function updateThemePreferenceAction(theme: string): Promise<{ ok: boolean }> {
+  const parsed = z.enum(["light", "dark", "system"]).safeParse(theme);
+  if (!parsed.success) return { ok: false };
+
+  const ctx = await requireAuthContext();
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ theme_preference: parsed.data, updated_at: new Date().toISOString() })
+    .eq("id", ctx.user.id);
+  return { ok: !error };
+}
+
 export async function sendPasswordResetAction(_prev: AccountState): Promise<AccountState> {
   const ctx = await requireAuthContext();
   const supabase = createSupabaseServerClient();

@@ -64,6 +64,10 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
           input.tint.percent != null ? ` — ${input.tint.percent}%` : ""
         }`;
 
+  const blueLight = input.blueLightId
+    ? config.blueLightOptions.find((o) => o.id === input.blueLightId)
+    : undefined;
+
   return (
     <div className="internal-print hidden print:block print:p-2 print:text-[11px] print:leading-tight print:text-black" aria-hidden="true">
       <div className="flex items-baseline justify-between border-b-2 border-black pb-2">
@@ -98,6 +102,17 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
               }
             />
             <Row label="Tint" value={tintDescription} />
+            <Row label="Blue light" value={blueLight?.name ?? "None"} />
+            <Row
+              label="Custom Lens Surfacing"
+              value={
+                result.surfacingEnabled
+                  ? `Yes${result.surfacingRecommended ? " (recommended)" : " (manual)"}`
+                  : result.surfacingRecommended
+                    ? "Recommended — turned off"
+                    : "No"
+              }
+            />
           </tbody>
         </table>
       </section>
@@ -187,6 +202,12 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
                 <Row label="Photochromic coverage" value={formatCoverageMethod(coverage.photochromicCoverage)} />
                 {input.tint.type !== "none" ? (
                   <Row label="Tint coverage" value={formatCoverageMethod(coverage.tintCoverage)} />
+                ) : null}
+                {input.blueLightId ? (
+                  <Row label="Blue light coverage" value={formatCoverageMethod(coverage.blueLightCoverage)} />
+                ) : null}
+                {result.surfacingFeeCents > 0 ? (
+                  <Row label="Surfacing coverage" value={formatCoverageMethod(coverage.surfacingCoverage)} />
                 ) : null}
                 <Row label="Other copay" value={formatCents(coverage.otherCopayCents)} />
                 <Row label="Additional allowance/credit" value={formatCents(coverage.additionalAllowanceCents)} />

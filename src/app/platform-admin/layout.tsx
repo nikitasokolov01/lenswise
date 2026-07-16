@@ -14,6 +14,7 @@ export default async function PlatformAdminLayout({ children }: { children: Reac
         organizationName: ctx.organization?.name ?? null,
         role: ctx.role,
         isSuperAdmin: ctx.isSuperAdmin,
+        themePreference: ctx.themePreference,
       }}
     >
       {children}

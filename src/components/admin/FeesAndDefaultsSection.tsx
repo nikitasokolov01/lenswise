@@ -88,6 +88,16 @@ export function FeesAndDefaultsSection({
               method={defaultInsuranceCoverage.tintCoverage}
               onChange={(tintCoverage) => set({ tintCoverage })}
             />
+            <DefaultCoverageField
+              label="Blue light coverage"
+              method={defaultInsuranceCoverage.blueLightCoverage}
+              onChange={(blueLightCoverage) => set({ blueLightCoverage })}
+            />
+            <DefaultCoverageField
+              label="Custom Lens Surfacing coverage"
+              method={defaultInsuranceCoverage.surfacingCoverage}
+              onChange={(surfacingCoverage) => set({ surfacingCoverage })}
+            />
             <Field
               label="Other copay"
               valueCents={defaultInsuranceCoverage.otherCopayCents}

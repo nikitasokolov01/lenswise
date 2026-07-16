@@ -2,13 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------- */
+/* Theme palette. The SAME class names (bg-white, text-navy-900, …) resolve */
+/* through these CSS variables, so switching .dark swaps the whole theme —  */
+/* it is one design, not two. `white` is a theme surface here (a dark card  */
+/* in dark mode), not literal #fff.                                         */
+/* ---------------------------------------------------------------------- */
+:root {
+  --c-navy-50: 242 245 248;
+  --c-navy-100: 227 233 239;
+  --c-navy-200: 195 208 221;
+  --c-navy-300: 152 171 192;
+  --c-navy-400: 102 128 159;
+  --c-navy-500: 73 97 130;
+  --c-navy-600: 57 73 106;
+  --c-navy-700: 45 58 84;
+  --c-navy-800: 33 42 61;
+  --c-navy-900: 22 28 41;
+  --c-navy-950: 13 17 26;
+
+  --c-teal-50: 238 251 251;
+  --c-teal-100: 213 243 244;
+  --c-teal-200: 174 229 232;
+  --c-teal-300: 120 209 215;
+  --c-teal-400: 63 180 189;
+  --c-teal-500: 36 151 161;
+  --c-teal-600: 31 122 132;
+  --c-teal-700: 30 100 108;
+  --c-teal-800: 30 81 90;
+  --c-teal-900: 27 68 76;
+
+  --c-paper: 250 248 243;
+  --c-white: 255 255 255;
+}
+
+.dark {
+  /* Navy inverts: dark surfaces (low numbers) and light text (high numbers). */
+  --c-navy-50: 30 38 54;
+  --c-navy-100: 42 51 68;
+  --c-navy-200: 57 73 106;
+  --c-navy-300: 73 97 130;
+  --c-navy-400: 130 150 176;
+  --c-navy-500: 152 171 192;
+  --c-navy-600: 195 208 221;
+  --c-navy-700: 214 224 234;
+  --c-navy-800: 227 233 239;
+  --c-navy-900: 242 245 248;
+  --c-navy-950: 250 251 252;
+
+  /* Teal brightens so accent text/borders stay legible on dark surfaces. */
+  --c-teal-50: 18 46 50;
+  --c-teal-100: 24 60 66;
+  --c-teal-200: 30 81 90;
+  --c-teal-300: 63 180 189;
+  --c-teal-400: 88 197 204;
+  --c-teal-500: 120 209 215;
+  --c-teal-600: 152 224 228;
+  --c-teal-700: 174 229 232;
+  --c-teal-800: 213 243 244;
+  --c-teal-900: 238 251 251;
+
+  --c-paper: 14 18 27;
+  --c-white: 26 33 47;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background-color: #faf8f3;
-  color: #161c29;
+  background-color: rgb(var(--c-paper));
+  color: rgb(var(--c-navy-900));
   overscroll-behavior-y: none;
 }
 
@@ -34,6 +98,33 @@ textarea {
 /* Print stylesheet                                                       */
 /* --------------------------------------------------------------------- */
 @media print {
+  /* Print previews are always LIGHT, even when the app is in dark mode. */
+  .dark {
+    --c-navy-50: 242 245 248;
+    --c-navy-100: 227 233 239;
+    --c-navy-200: 195 208 221;
+    --c-navy-300: 152 171 192;
+    --c-navy-400: 102 128 159;
+    --c-navy-500: 73 97 130;
+    --c-navy-600: 57 73 106;
+    --c-navy-700: 45 58 84;
+    --c-navy-800: 33 42 61;
+    --c-navy-900: 22 28 41;
+    --c-navy-950: 13 17 26;
+    --c-teal-50: 238 251 251;
+    --c-teal-100: 213 243 244;
+    --c-teal-200: 174 229 232;
+    --c-teal-300: 120 209 215;
+    --c-teal-400: 63 180 189;
+    --c-teal-500: 36 151 161;
+    --c-teal-600: 31 122 132;
+    --c-teal-700: 30 100 108;
+    --c-teal-800: 30 81 90;
+    --c-teal-900: 27 68 76;
+    --c-paper: 255 255 255;
+    --c-white: 255 255 255;
+  }
+
   .no-print {
     display: none !important;
   }

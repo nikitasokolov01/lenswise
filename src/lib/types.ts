@@ -104,6 +104,7 @@ export type QuoteLineItemCategory =
   | "coating"
   | "photochromic"
   | "tint"
+  | "blue_light"
   | "fee"
   | "discount"
   | "insurance"
@@ -180,6 +181,33 @@ export interface MaterialConfig {
    * appliesToHighCylinderSurfacing. See rules.ts.
    */
   isHighIndex: boolean;
+  /**
+   * Lens types this material may be paired with. When empty, the material is
+   * treated as compatible with ALL lens types (back-compat for configs created
+   * before per-material compatibility). Otherwise only the listed lens type ids
+   * are offered in the Quote Builder.
+   */
+  compatibleLensTypeIds: string[];
+  /**
+   * Progressive designs this material may be paired with (only relevant for the
+   * Progressive lens type). Empty = compatible with all progressive designs.
+   */
+  compatibleProgressiveDesignIds: string[];
+  active: boolean;
+  sortOrder: number;
+}
+
+/**
+ * A configurable Blue Light option — completely independent of coatings,
+ * photochromic, tint, and material. Behaves like any other priced lens option.
+ */
+export interface BlueLightOptionConfig {
+  id: string;
+  name: string;
+  /** Customer-facing label (used when exact technology names are hidden shows this). */
+  customerLabel: string;
+  description: string;
+  retailPriceCents: Money;
   active: boolean;
   sortOrder: number;
 }
@@ -265,6 +293,8 @@ export interface DefaultInsuranceCoverage {
   coatingCoverage: CoverageMethod;
   photochromicCoverage: CoverageMethod;
   tintCoverage: CoverageMethod;
+  blueLightCoverage: CoverageMethod;
+  surfacingCoverage: CoverageMethod;
   otherCopayCents: Money;
   additionalAllowanceCents: Money;
   otherChargeCents: Money;
@@ -293,6 +323,7 @@ export interface PricingConfiguration {
   photochromicProducts: PhotochromicProductConfig[];
   photochromicColors: PhotochromicColorConfig[];
   tints: TintConfig;
+  blueLightOptions: BlueLightOptionConfig[];
   transitionsSurfacingFeeCents: Money;
   /**
    * Fee applied when either eye's cylinder is at or beyond
@@ -376,6 +407,8 @@ export interface InsuranceCoverageInput {
   coatingCoverage: CoverageMethod;
   photochromicCoverage: CoverageMethod;
   tintCoverage: CoverageMethod;
+  blueLightCoverage: CoverageMethod;
+  surfacingCoverage: CoverageMethod;
   otherCopayCents: Money;
   additionalAllowanceCents: Money;
   otherChargeCents: Money;
@@ -413,6 +446,17 @@ export interface QuoteInput {
   coatingId: string | null;
   photochromic: PhotochromicSelection;
   tint: TintSelection;
+  /** Selected Blue Light option id (from PricingConfiguration.blueLightOptions), or null for none. */
+  blueLightId: string | null;
+  /**
+   * Manual override for Custom Lens Surfacing. `null` = follow the automatic
+   * recommendation (high-cylinder / custom photochromic color). `true` = force
+   * on, `false` = force off. The reducer resets this back to `null` whenever an
+   * input that affects the recommendation changes (prescription, material, lens
+   * type, or photochromic product/color), so a manual choice is sticky only
+   * until the situation actually changes.
+   */
+  surfacingOverride: boolean | null;
   /** How the Internal Worksheet displays the applied prescription (never modifies it). */
   prescriptionDisplayMode: PrescriptionDisplayMode;
   /**
@@ -478,12 +522,16 @@ export interface InsuranceBreakdown {
   coatingCoveredCents: Money;
   photochromicCoveredCents: Money;
   tintCoveredCents: Money;
+  blueLightCoveredCents: Money;
+  surfacingCoveredCents: Money;
   /* Patient-side: per-category copays (each replaces that category's retail). */
   frameCopayCents: Money;
   lensCopayCents: Money;
   coatingCopayCents: Money;
   photochromicCopayCents: Money;
   tintCopayCents: Money;
+  blueLightCopayCents: Money;
+  surfacingCopayCents: Money;
   otherCopayCents: Money;
   /* Patient-side: flat non-covered charge owed in full. */
   otherChargeCents: Money;
@@ -504,6 +552,14 @@ export interface QuoteCalculationResult {
   /** Fully itemized per-category insurance detail (null unless in Use Insurance mode). */
   insuranceBreakdown: InsuranceBreakdown | null;
   surfacingFeeReasons: SurfacingFeeReason[];
+  /** Whether Custom Lens Surfacing is automatically recommended for this quote (a rule qualifies). */
+  surfacingRecommended: boolean;
+  /** Whether Custom Lens Surfacing is actually applied (recommendation ± manual override). */
+  surfacingEnabled: boolean;
+  /** The surfacing fee charged (0 when not enabled). */
+  surfacingFeeCents: Money;
+  /** Short, customer-safe reason the surfacing was recommended (null when not recommended). */
+  surfacingRecommendationNote: string | null;
   patientResponsibilityCents: Money;
   isManualOverride: boolean;
   overrideNote: string;

@@ -16,6 +16,8 @@ function customerPatientLines(b: InsuranceBreakdown): Array<{ label: string; cen
     { label: "Coating copay", cents: b.coatingCopayCents },
     { label: "Photochromic copay", cents: b.photochromicCopayCents },
     { label: "Tint copay", cents: b.tintCopayCents },
+    { label: "Blue light copay", cents: b.blueLightCopayCents },
+    { label: "Surfacing copay", cents: b.surfacingCopayCents },
     { label: "Other copay", cents: b.otherCopayCents },
     { label: "Other non-covered charge", cents: b.otherChargeCents },
   ].filter((line) => line.cents > 0);
@@ -32,6 +34,8 @@ function customerInsuranceLines(b: InsuranceBreakdown): Array<{ label: string; c
     { label: "Coating covered by insurance", cents: b.coatingCoveredCents },
     { label: "Photochromic covered by insurance", cents: b.photochromicCoveredCents },
     { label: "Tint covered by insurance", cents: b.tintCoveredCents },
+    { label: "Blue light covered by insurance", cents: b.blueLightCoveredCents },
+    { label: "Surfacing covered by insurance", cents: b.surfacingCoveredCents },
   ].filter((line) => line.cents > 0);
 }
 

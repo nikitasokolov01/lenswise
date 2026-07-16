@@ -26,6 +26,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         organizationName: ctx.organization?.name ?? null,
         role: ctx.role,
         isSuperAdmin: ctx.isSuperAdmin,
+        themePreference: ctx.themePreference,
       }}
     >
       {children}

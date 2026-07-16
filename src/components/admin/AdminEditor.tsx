@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { usePricingConfiguration } from "@/lib/pricing/usePricingConfiguration";
-import { DemoPricingBanner } from "@/components/layout/DemoPricingBanner";
 import { OfficeSettingsSection } from "@/components/admin/OfficeSettingsSection";
 import { LensTypesSection } from "@/components/admin/LensTypesSection";
 import { ProgressiveDesignsSection } from "@/components/admin/ProgressiveDesignsSection";
@@ -10,6 +9,7 @@ import { MaterialsSection } from "@/components/admin/MaterialsSection";
 import { CoatingsSection } from "@/components/admin/CoatingsSection";
 import { PhotochromicSection } from "@/components/admin/PhotochromicSection";
 import { TintsSection } from "@/components/admin/TintsSection";
+import { BlueLightSection } from "@/components/admin/BlueLightSection";
 import { FeesAndDefaultsSection } from "@/components/admin/FeesAndDefaultsSection";
 import { Button } from "@/components/ui/button";
 import { Save, RotateCcw, CheckCircle2 } from "lucide-react";
@@ -77,7 +77,7 @@ export function AdminEditor() {
   }
 
   async function handleRestoreDefaults() {
-    if (!window.confirm("Restore demonstration default pricing? This replaces all current pricing configuration.")) {
+    if (!window.confirm("Restore default pricing? This replaces all current pricing configuration.")) {
       return;
     }
     setSaveError(null);
@@ -91,8 +91,6 @@ export function AdminEditor() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <DemoPricingBanner />
-
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Admin Pricing</h1>
@@ -103,7 +101,7 @@ export function AdminEditor() {
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={handleRestoreDefaults} disabled={saving}>
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Restore demonstration defaults
+            Restore defaults
           </Button>
           <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
             {savedMessageVisible ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
@@ -162,6 +160,11 @@ export function AdminEditor() {
         />
 
         <TintsSection tints={draft.tints} onChange={(tints) => setDraft({ ...draft, tints })} />
+
+        <BlueLightSection
+          options={draft.blueLightOptions}
+          onChange={(blueLightOptions) => setDraft({ ...draft, blueLightOptions })}
+        />
 
         <FeesAndDefaultsSection
           defaultInsuranceCoverage={draft.defaultInsuranceCoverage}

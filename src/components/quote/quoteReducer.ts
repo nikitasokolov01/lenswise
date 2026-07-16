@@ -26,6 +26,8 @@ type InsuranceCoverageMoneyField = Exclude<
   | "coatingCoverage"
   | "photochromicCoverage"
   | "tintCoverage"
+  | "blueLightCoverage"
+  | "surfacingCoverage"
 >;
 
 /** The per-category CoverageMethod fields on InsuranceCoverageInput. */
@@ -35,12 +37,22 @@ type InsuranceCoverageMethodField =
   | "materialCoverage"
   | "coatingCoverage"
   | "photochromicCoverage"
-  | "tintCoverage";
+  | "tintCoverage"
+  | "blueLightCoverage"
+  | "surfacingCoverage";
 
 /** Fields cleared whenever the applied prescription is removed (Clear Prescription, or switching to Frame Only). */
 function clearedLensSelections(): Pick<
   QuoteInput,
-  "lensTypeId" | "progressiveDesignId" | "materialId" | "coatingId" | "photochromic" | "tint" | "prescriptionDisplayMode"
+  | "lensTypeId"
+  | "progressiveDesignId"
+  | "materialId"
+  | "coatingId"
+  | "photochromic"
+  | "tint"
+  | "blueLightId"
+  | "surfacingOverride"
+  | "prescriptionDisplayMode"
 > {
   return {
     lensTypeId: null,
@@ -49,6 +61,8 @@ function clearedLensSelections(): Pick<
     coatingId: null,
     photochromic: { productId: null, colorId: null },
     tint: { type: "none", colorId: null, percent: null },
+    blueLightId: null,
+    surfacingOverride: null,
     prescriptionDisplayMode: "original",
   };
 }
@@ -67,6 +81,8 @@ export type QuoteAction =
   | { type: "SET_TINT_COLOR"; colorId: string | null }
   | { type: "SET_TINT_PERCENT"; percent: number | null }
   | { type: "CLEAR_TINT" }
+  | { type: "SET_BLUE_LIGHT"; blueLightId: string | null }
+  | { type: "SET_SURFACING_OVERRIDE"; enabled: boolean | null }
   | { type: "SET_PRESCRIPTION_DISPLAY_MODE"; mode: PrescriptionDisplayMode }
   | { type: "APPLY_PRESCRIPTION"; prescription: PrescriptionInput }
   | { type: "CLEAR_PRESCRIPTION" }
@@ -125,12 +141,15 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
         // A progressive design only makes sense for the Progressive lens
         // type, so clear it whenever a different lens type is selected.
         progressiveDesignId: action.isProgressive ? state.progressiveDesignId : null,
+        // Lens type affects the surfacing recommendation → return to auto.
+        surfacingOverride: null,
       };
     }
     case "SET_PROGRESSIVE_DESIGN":
       return { ...state, progressiveDesignId: action.progressiveDesignId };
     case "SET_MATERIAL":
-      return { ...state, materialId: action.materialId };
+      // Material affects the surfacing recommendation → return to auto.
+      return { ...state, materialId: action.materialId, surfacingOverride: null };
     case "SET_COATING":
       return { ...state, coatingId: action.coatingId };
     case "SET_PHOTOCHROMIC_PRODUCT":
@@ -140,9 +159,16 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
           productId: action.productId,
           colorId: action.requiresColor ? state.photochromic.colorId : null,
         },
+        // Photochromic product affects the surfacing recommendation → return to auto.
+        surfacingOverride: null,
       };
     case "SET_PHOTOCHROMIC_COLOR":
-      return { ...state, photochromic: { ...state.photochromic, colorId: action.colorId } };
+      // Photochromic color affects the surfacing recommendation → return to auto.
+      return {
+        ...state,
+        photochromic: { ...state.photochromic, colorId: action.colorId },
+        surfacingOverride: null,
+      };
     case "SET_TINT_TYPE":
       // Selecting "None" clears the color and percentage (and, via the
       // calculation engine, removes any tint pricing). Switching between
@@ -156,6 +182,12 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
       return { ...state, tint: { ...state.tint, percent: action.percent } };
     case "CLEAR_TINT":
       return { ...state, tint: { type: "none", colorId: null, percent: null } };
+    case "SET_BLUE_LIGHT":
+      return { ...state, blueLightId: action.blueLightId };
+    case "SET_SURFACING_OVERRIDE":
+      // `null` = follow the automatic recommendation; true/false = a sticky
+      // manual choice that only resets when a relevant input changes.
+      return { ...state, surfacingOverride: action.enabled };
     case "SET_PRESCRIPTION_DISPLAY_MODE":
       // Display-only: never touches the applied `prescription`.
       return { ...state, prescriptionDisplayMode: action.mode };
@@ -164,7 +196,8 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
       // quote state — see PrescriptionStep.tsx, which keeps in-progress
       // selections in local component state until "Apply Prescription" is
       // pressed, so a mid-edit value can never leak into gating/calculation.
-      return { ...state, prescription: action.prescription };
+      // The prescription affects the surfacing recommendation → return to auto.
+      return { ...state, prescription: action.prescription, surfacingOverride: null };
     case "CLEAR_PRESCRIPTION":
       return { ...state, prescription: null, ...clearedLensSelections() };
     case "SET_INSURANCE_MODE":

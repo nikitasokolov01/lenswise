@@ -4,12 +4,15 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSuperAdminEmail } from "@/lib/env";
 import type { OrgRole } from "@/lib/auth/permissions";
 
+export type ThemePreference = "light" | "dark" | "system";
+
 export interface AuthContext {
   user: { id: string; email: string };
   fullName: string | null;
   organization: { id: string; name: string; status: "active" | "disabled" } | null;
   role: OrgRole | null;
   isSuperAdmin: boolean;
+  themePreference: ThemePreference;
 }
 
 /**
@@ -31,9 +34,13 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, is_super_admin")
+    .select("full_name, is_super_admin, theme_preference")
     .eq("id", user.id)
     .maybeSingle();
+
+  const rawTheme = (profile?.theme_preference as string | null) ?? "system";
+  const themePreference: ThemePreference =
+    rawTheme === "light" || rawTheme === "dark" ? rawTheme : "system";
 
   let isSuperAdmin = Boolean(profile?.is_super_admin);
   const superEmail = getSuperAdminEmail();
@@ -68,5 +75,6 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     organization,
     role: membershipRow?.role ?? null,
     isSuperAdmin,
+    themePreference,
   };
 });

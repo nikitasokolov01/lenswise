@@ -7,6 +7,7 @@ import { Glasses, Settings, Users, Building2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingRepositoryProvider } from "@/lib/pricing/repositoryContext";
 import { AccountMenu } from "@/components/shell/AccountMenu";
+import { ThemeAccountSync, type Theme } from "@/components/theme/ThemeProvider";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
 
 export interface ShellContext {
@@ -17,6 +18,7 @@ export interface ShellContext {
   organizationName: string | null;
   role: OrgRole | null;
   isSuperAdmin: boolean;
+  themePreference: Theme;
 }
 
 /**
@@ -39,6 +41,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
 
   const shell = (
     <div className="min-h-screen">
+      <ThemeAccountSync accountTheme={context.themePreference} />
       <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-white pt-safe-top">
         <div className="mx-auto flex max-w-6xl items-center gap-1 px-4 sm:px-6 lg:px-8">
           <span className="mr-2 flex items-baseline gap-1.5 py-3">

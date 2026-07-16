@@ -1,14 +1,15 @@
-import { AlertTriangle } from "lucide-react";
-import { DEMO_PRICING_DISCLAIMER } from "@/lib/constants";
+import { Info } from "lucide-react";
+import { PRICING_SETUP_NOTE } from "@/lib/constants";
 
-export function DemoPricingBanner() {
+/** Optional in-app reminder to configure pricing. Not shown by default. */
+export function PricingSetupNote() {
   return (
     <div
       role="note"
-      className="no-print mb-5 flex items-start gap-2.5 rounded-md border border-amber-300 bg-amber-50 px-4 py-3"
+      className="no-print mb-5 flex items-start gap-2.5 rounded-md border border-navy-200 bg-navy-50 px-4 py-3"
     >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-      <p className="text-sm text-amber-900">{DEMO_PRICING_DISCLAIMER}</p>
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+      <p className="text-sm text-navy-700">{PRICING_SETUP_NOTE}</p>
     </div>
   );
 }

@@ -22,8 +22,8 @@ export function isUsingDefaultPin(): boolean {
 export const LOCAL_STORAGE_PRICING_KEY = "optical-quote-calculator:pricing-config:v1";
 export const SESSION_STORAGE_ADMIN_UNLOCK_KEY = "optical-quote-calculator:admin-unlocked";
 
-export const DEMO_PRICING_DISCLAIMER =
-  "Demonstration pricing only — replace with the office's approved price list before operational use.";
+export const PRICING_SETUP_NOTE =
+  "Set your office's approved price list in Admin Pricing.";
 
 export const QUOTE_ESTIMATE_DISCLAIMER_DEFAULT =
   "This is an estimate only and may be subject to insurance verification, plan-year benefit changes, and final prescription requirements.";

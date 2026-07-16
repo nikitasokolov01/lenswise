@@ -52,6 +52,8 @@ function buildPlainTextSummary(
       ["Coating copay", b.coatingCopayCents],
       ["Photochromic copay", b.photochromicCopayCents],
       ["Tint copay", b.tintCopayCents],
+      ["Blue light copay", b.blueLightCopayCents],
+      ["Surfacing copay", b.surfacingCopayCents],
       ["Other copay", b.otherCopayCents],
       ["Other non-covered charge", b.otherChargeCents],
     ];
@@ -64,6 +66,8 @@ function buildPlainTextSummary(
       ["Coating covered by insurance", b.coatingCoveredCents],
       ["Photochromic covered by insurance", b.photochromicCoveredCents],
       ["Tint covered by insurance", b.tintCoveredCents],
+      ["Blue light covered by insurance", b.blueLightCoveredCents],
+      ["Surfacing covered by insurance", b.surfacingCoveredCents],
     ];
     for (const [label, cents] of patientLines) {
       if (cents > 0) lines.push(`${label}: ${formatCents(cents)}`);

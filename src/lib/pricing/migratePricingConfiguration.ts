@@ -95,6 +95,9 @@ export function migratePricingConfiguration(raw: unknown): unknown {
   if (version < 10) {
     migrated = migrateV9ToV10(migrated);
   }
+  if (version < 11) {
+    migrated = migrateV10ToV11(migrated);
+  }
 
   return migrated;
 }
@@ -404,6 +407,68 @@ function migrateV9ToV10(obj: Record<string, unknown>): Record<string, unknown> {
     };
   }
   migrated.schemaVersion = 10;
+  return migrated;
+}
+
+/**
+ * v10 -> v11:
+ *  - Custom Lens Surfacing became a selectable option with quote-level
+ *    insurance coverage, and Blue Light was added as an independent option.
+ *    Adds `blueLightOptions` (default None + Blue Light Filter), the two new
+ *    default coverages (`blueLightCoverage`, `surfacingCoverage` → Retail), and
+ *    per-material compatibility arrays (empty = compatible with everything, so
+ *    no existing material loses availability).
+ */
+function migrateV10ToV11(obj: Record<string, unknown>): Record<string, unknown> {
+  const migrated: Record<string, unknown> = { ...obj };
+
+  if (!Array.isArray(migrated.blueLightOptions)) {
+    migrated.blueLightOptions = [
+      {
+        id: "blue-light-none",
+        name: "None",
+        customerLabel: "No Blue Light Filter",
+        description: "No blue-light filtering.",
+        retailPriceCents: 0,
+        active: true,
+        sortOrder: 0,
+      },
+      {
+        id: "blue-light-filter",
+        name: "Blue Light Filter",
+        customerLabel: "Blue Light Filter",
+        description: "Filters a portion of blue-violet light for screen-heavy days.",
+        retailPriceCents: 4000,
+        active: true,
+        sortOrder: 1,
+      },
+    ];
+  }
+
+  const coverage = asRecord(migrated.defaultInsuranceCoverage);
+  const nextCoverage = { ...coverage };
+  if (typeof nextCoverage.blueLightCoverage !== "object" || nextCoverage.blueLightCoverage === null) {
+    nextCoverage.blueLightCoverage = { type: "retail" };
+  }
+  if (typeof nextCoverage.surfacingCoverage !== "object" || nextCoverage.surfacingCoverage === null) {
+    nextCoverage.surfacingCoverage = { type: "retail" };
+  }
+  migrated.defaultInsuranceCoverage = nextCoverage;
+
+  if (Array.isArray(migrated.materials)) {
+    migrated.materials = migrated.materials.map((entry) => {
+      const material = asRecord(entry);
+      return {
+        ...material,
+        compatibleLensTypeIds: Array.isArray(material.compatibleLensTypeIds) ? material.compatibleLensTypeIds : [],
+        compatibleProgressiveDesignIds: Array.isArray(material.compatibleProgressiveDesignIds)
+          ? material.compatibleProgressiveDesignIds
+          : [],
+      };
+    });
+  }
+
+  migrated.schemaVersion = 11;
   return migrated;
 }
 

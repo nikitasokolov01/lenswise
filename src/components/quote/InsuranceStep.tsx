@@ -15,6 +15,10 @@ interface InsuranceStepProps {
   input: QuoteInput;
   dispatch: Dispatch<QuoteAction>;
   preOverrideEstimateCents: number;
+  /** Whether a surfacing fee is on this quote (shows its coverage control). */
+  surfacingApplies: boolean;
+  /** Whether a Blue Light option is selected (shows its coverage control). */
+  blueLightApplies: boolean;
 }
 
 const MODES: { value: InsuranceMode; label: string; description: string }[] = [
@@ -36,6 +40,8 @@ type CoverageMoneyField = Exclude<
   | "coatingCoverage"
   | "photochromicCoverage"
   | "tintCoverage"
+  | "blueLightCoverage"
+  | "surfacingCoverage"
 >;
 type CoverageMethodField =
   | "frameCoverage"
@@ -43,9 +49,17 @@ type CoverageMethodField =
   | "materialCoverage"
   | "coatingCoverage"
   | "photochromicCoverage"
-  | "tintCoverage";
+  | "tintCoverage"
+  | "blueLightCoverage"
+  | "surfacingCoverage";
 
-export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: InsuranceStepProps) {
+export function InsuranceStep({
+  input,
+  dispatch,
+  preOverrideEstimateCents,
+  surfacingApplies,
+  blueLightApplies,
+}: InsuranceStepProps) {
   const mode = input.insurance.mode;
   const coverage = input.insurance.coverage;
 
@@ -158,6 +172,22 @@ export function InsuranceStep({ input, dispatch, preOverrideEstimateCents }: Ins
                   label="Tint coverage"
                   method={coverage.tintCoverage}
                   onChange={(method) => setCoverageMethod("tintCoverage", method)}
+                />
+              ) : null}
+              {blueLightApplies ? (
+                <CoverageMethodField
+                  id="blue-light-coverage"
+                  label="Blue light coverage"
+                  method={coverage.blueLightCoverage}
+                  onChange={(method) => setCoverageMethod("blueLightCoverage", method)}
+                />
+              ) : null}
+              {surfacingApplies ? (
+                <CoverageMethodField
+                  id="surfacing-coverage"
+                  label="Custom Lens Surfacing coverage"
+                  method={coverage.surfacingCoverage}
+                  onChange={(method) => setCoverageMethod("surfacingCoverage", method)}
                 />
               ) : null}
               <CoverageField

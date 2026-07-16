@@ -13,6 +13,8 @@ import { PrescriptionStep } from "@/components/quote/PrescriptionStep";
 import { CoatingStep } from "@/components/quote/CoatingStep";
 import { PhotochromicStep } from "@/components/quote/PhotochromicStep";
 import { TintStep } from "@/components/quote/TintStep";
+import { BlueLightStep } from "@/components/quote/BlueLightStep";
+import { SurfacingStep } from "@/components/quote/SurfacingStep";
 import { InsuranceStep } from "@/components/quote/InsuranceStep";
 import { AdjustmentsStep } from "@/components/quote/AdjustmentsStep";
 import { QuoteSummary } from "@/components/quote/QuoteSummary";
@@ -20,7 +22,7 @@ import { QuoteActions } from "@/components/quote/QuoteActions";
 import { PatientView } from "@/components/quote/PatientView";
 import { CustomerEstimatePrint } from "@/components/quote/PrintableQuote";
 import { InternalOrderWorksheetPrint } from "@/components/quote/InternalOrderWorksheetPrint";
-import { DemoPricingBanner } from "@/components/layout/DemoPricingBanner";
+import { compatibleMaterials, materialSupportsCombo } from "@/lib/calculation/materialCompatibility";
 import { clampNonNegative } from "@/lib/money";
 
 function QuoteBuilderSkeleton() {
@@ -81,6 +83,20 @@ function QuoteBuilderReady({
   const lensType = input.lensTypeId
     ? config.lensTypes.find((lt) => lt.id === input.lensTypeId)
     : undefined;
+  const progressiveDesign = input.progressiveDesignId
+    ? config.progressiveDesigns.find((d) => d.id === input.progressiveDesignId)
+    : undefined;
+  const material = input.materialId ? config.materials.find((m) => m.id === input.materialId) : undefined;
+
+  // Only offer materials compatible with the chosen lens type (+ progressive
+  // design). If the selected material becomes incompatible after a lens-type or
+  // design change, clear it so an impossible combination can never persist.
+  const availableMaterials = compatibleMaterials(config.materials, lensType, progressiveDesign);
+  useEffect(() => {
+    if (material && lensType && !materialSupportsCombo(material, lensType, progressiveDesign)) {
+      dispatch({ type: "SET_MATERIAL", materialId: null });
+    }
+  }, [material, lensType, progressiveDesign]);
 
   // Lens configuration (lens type, progressive design, material, coating,
   // photochromic) stays locked until a valid prescription has been applied
@@ -120,8 +136,6 @@ function QuoteBuilderReady({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <DemoPricingBanner />
-
       <div className="mb-6 no-print">
         <h1 className="text-3xl font-bold tracking-tight text-navy-900">LensWise</h1>
         <p className="text-base font-medium text-teal-700">Optical Quote Builder</p>
@@ -147,7 +161,7 @@ function QuoteBuilderReady({
           <MaterialStep
             input={input}
             dispatch={dispatch}
-            materials={config.materials}
+            materials={availableMaterials}
             lensType={lensType}
             disabled={lensControlsDisabled}
             disabledReason={lensControlsDisabledReason}
@@ -177,7 +191,27 @@ function QuoteBuilderReady({
             disabled={lensControlsDisabled}
             disabledReason={lensControlsDisabledReason}
           />
-          <InsuranceStep input={input} dispatch={dispatch} preOverrideEstimateCents={preOverrideEstimateCents} />
+          <BlueLightStep
+            input={input}
+            dispatch={dispatch}
+            options={config.blueLightOptions}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
+          />
+          <SurfacingStep
+            input={input}
+            dispatch={dispatch}
+            result={result}
+            disabled={lensControlsDisabled}
+            disabledReason={lensControlsDisabledReason}
+          />
+          <InsuranceStep
+            input={input}
+            dispatch={dispatch}
+            preOverrideEstimateCents={preOverrideEstimateCents}
+            surfacingApplies={result.surfacingFeeCents > 0}
+            blueLightApplies={input.blueLightId !== null}
+          />
           <AdjustmentsStep input={input} dispatch={dispatch} />
         </div>
 

@@ -1,36 +1,42 @@
 import type { Config } from "tailwindcss";
 
+/** Palette color that reads its RGB channels from a CSS variable so the whole
+ *  theme can be swapped (light / dark) without changing any component class. */
+const v = (name: string) => `rgb(var(${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
         navy: {
-          50: "#f2f5f8",
-          100: "#e3e9ef",
-          200: "#c3d0dd",
-          300: "#98abc0",
-          400: "#66809f",
-          500: "#496182",
-          600: "#39496a",
-          700: "#2d3a54",
-          800: "#212a3d",
-          900: "#161c29",
-          950: "#0d111a",
+          50: v("--c-navy-50"),
+          100: v("--c-navy-100"),
+          200: v("--c-navy-200"),
+          300: v("--c-navy-300"),
+          400: v("--c-navy-400"),
+          500: v("--c-navy-500"),
+          600: v("--c-navy-600"),
+          700: v("--c-navy-700"),
+          800: v("--c-navy-800"),
+          900: v("--c-navy-900"),
+          950: v("--c-navy-950"),
         },
         teal: {
-          50: "#eefbfb",
-          100: "#d5f3f4",
-          200: "#aee5e8",
-          300: "#78d1d7",
-          400: "#3fb4bd",
-          500: "#2497a1",
-          600: "#1f7a84",
-          700: "#1e646c",
-          800: "#1e515a",
-          900: "#1b444c",
+          50: v("--c-teal-50"),
+          100: v("--c-teal-100"),
+          200: v("--c-teal-200"),
+          300: v("--c-teal-300"),
+          400: v("--c-teal-400"),
+          500: v("--c-teal-500"),
+          600: v("--c-teal-600"),
+          700: v("--c-teal-700"),
+          800: v("--c-teal-800"),
+          900: v("--c-teal-900"),
         },
-        paper: "#faf8f3",
+        paper: v("--c-paper"),
+        white: v("--c-white"),
       },
       fontFamily: {
         sans: [

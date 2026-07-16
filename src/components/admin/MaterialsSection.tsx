@@ -18,6 +18,17 @@ interface MaterialsSectionProps {
   onChange: (items: MaterialConfig[]) => void;
 }
 
+/**
+ * Toggle one id in a compatibility list. An empty stored list means "all" — so
+ * unchecking one materializes the full set minus that id; an explicit full set
+ * behaves identically to empty in the engine.
+ */
+function toggleCompat(list: string[], allIds: string[], id: string, checked: boolean): string[] {
+  const effective = list.length === 0 ? [...allIds] : list;
+  if (checked) return Array.from(new Set([...effective, id]));
+  return effective.filter((x) => x !== id);
+}
+
 /** One row of the price matrix: a lens type, and (for Progressive) a design. */
 interface PriceMatrixRow {
   key: string;
@@ -85,6 +96,8 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
             prices: [],
             appliesToHighCylinderSurfacing: false,
             isHighIndex: false,
+            compatibleLensTypeIds: [],
+            compatibleProgressiveDesignIds: [],
           })}
           renderFields={(item, update) => (
             <div className="space-y-4">
@@ -116,6 +129,69 @@ export function MaterialsSection({ materials, lensTypes, progressiveDesigns, onC
                 checked={item.isHighIndex}
                 onChange={(e) => update({ isHighIndex: e.target.checked })}
               />
+
+              <div>
+                <p className="mb-1 text-sm font-medium text-navy-700">Compatible lens types</p>
+                <p className="mb-2 text-xs text-navy-400">
+                  Uncheck a lens type this material cannot be made in. Only compatible options appear in the Quote
+                  Builder.
+                </p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                  {lensTypes
+                    .filter((lt) => lt.active)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map((lt) => {
+                      const allIds = lensTypes.filter((x) => x.active).map((x) => x.id);
+                      const checked = item.compatibleLensTypeIds.length === 0 || item.compatibleLensTypeIds.includes(lt.id);
+                      return (
+                        <label key={lt.id} className="flex items-center gap-2 text-sm text-navy-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              update({ compatibleLensTypeIds: toggleCompat(item.compatibleLensTypeIds, allIds, lt.id, e.target.checked) })
+                            }
+                          />
+                          {lt.name}
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1 text-sm font-medium text-navy-700">Compatible progressive designs</p>
+                <p className="mb-2 text-xs text-navy-400">Only used when this material is paired with a Progressive lens.</p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                  {progressiveDesigns
+                    .filter((d) => d.active)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map((d) => {
+                      const allIds = progressiveDesigns.filter((x) => x.active).map((x) => x.id);
+                      const checked =
+                        item.compatibleProgressiveDesignIds.length === 0 || item.compatibleProgressiveDesignIds.includes(d.id);
+                      return (
+                        <label key={d.id} className="flex items-center gap-2 text-sm text-navy-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              update({
+                                compatibleProgressiveDesignIds: toggleCompat(
+                                  item.compatibleProgressiveDesignIds,
+                                  allIds,
+                                  d.id,
+                                  e.target.checked
+                                ),
+                              })
+                            }
+                          />
+                          {d.name}
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
 
               <div>
                 <p className="mb-2 text-sm font-medium text-navy-700">Price by lens type</p>

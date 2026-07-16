@@ -48,6 +48,18 @@ const materialConfigSchema = z.object({
   prices: z.array(materialPriceSchema),
   appliesToHighCylinderSurfacing: z.boolean(),
   isHighIndex: z.boolean(),
+  compatibleLensTypeIds: z.array(z.string()),
+  compatibleProgressiveDesignIds: z.array(z.string()),
+  active: z.boolean(),
+  sortOrder: z.number(),
+});
+
+const blueLightOptionConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  customerLabel: z.string(),
+  description: z.string(),
+  retailPriceCents: z.number().int(),
   active: z.boolean(),
   sortOrder: z.number(),
 });
@@ -117,6 +129,8 @@ const defaultInsuranceCoverageSchema = z.object({
   coatingCoverage: coverageMethodSchema,
   photochromicCoverage: coverageMethodSchema,
   tintCoverage: coverageMethodSchema,
+  blueLightCoverage: coverageMethodSchema,
+  surfacingCoverage: coverageMethodSchema,
   otherCopayCents: z.number().int(),
   additionalAllowanceCents: z.number().int(),
   otherChargeCents: z.number().int(),
@@ -134,6 +148,7 @@ export const pricingConfigurationSchema = z.object({
   photochromicProducts: z.array(photochromicProductConfigSchema),
   photochromicColors: z.array(photochromicColorConfigSchema),
   tints: tintConfigSchema,
+  blueLightOptions: z.array(blueLightOptionConfigSchema),
   transitionsSurfacingFeeCents: z.number().int(),
   highCylinderSurfacingFeeCents: z.number().int(),
   highCylinderThresholdDiopters: z.number(),

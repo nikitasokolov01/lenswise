@@ -1,4 +1,5 @@
 import type {
+  BlueLightOptionConfig,
   CoatingConfig,
   CoverageMethod,
   LensTypeConfig,
@@ -60,7 +61,7 @@ function copay(amountCents: number): CoverageMethod {
  * industry-standard retail pricing.
  */
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /**
  * Lens type is purely "what optical design is this lens" (Single Vision /
@@ -203,6 +204,8 @@ const materials: MaterialConfig[] = [
     // CR-39 edges/surfaces well at high-minus cylinder without extra lab work.
     appliesToHighCylinderSurfacing: false,
     isHighIndex: false,
+    compatibleLensTypeIds: [],
+    compatibleProgressiveDesignIds: [],
     prices: buildMaterialPrices({
       materialSlug: "cr39",
       singleVisionCents: 6500,
@@ -223,6 +226,8 @@ const materials: MaterialConfig[] = [
     // cylinder (and is not high index, so it takes the prescription fee).
     appliesToHighCylinderSurfacing: true,
     isHighIndex: false,
+    compatibleLensTypeIds: [],
+    compatibleProgressiveDesignIds: [],
     prices: buildMaterialPrices({
       materialSlug: "polycarbonate",
       singleVisionCents: 10000,
@@ -244,6 +249,8 @@ const materials: MaterialConfig[] = [
     // high-cylinder surfacing fee via isHighIndex (see rules.ts).
     appliesToHighCylinderSurfacing: true,
     isHighIndex: true,
+    compatibleLensTypeIds: [],
+    compatibleProgressiveDesignIds: [],
     prices: buildMaterialPrices({
       materialSlug: "hi167",
       singleVisionCents: 14500,
@@ -369,10 +376,31 @@ const photochromicColors: PhotochromicColorConfig[] = [
   { id: "color-ruby", name: "Ruby", isStandardColor: false, active: true, sortOrder: 7 },
 ];
 
+const blueLightOptions: BlueLightOptionConfig[] = [
+  {
+    id: "blue-light-none",
+    name: "None",
+    customerLabel: "No Blue Light Filter",
+    description: "No blue-light filtering.",
+    retailPriceCents: 0,
+    active: true,
+    sortOrder: 0,
+  },
+  {
+    id: "blue-light-filter",
+    name: "Blue Light Filter",
+    customerLabel: "Blue Light Filter",
+    description: "Filters a portion of blue-violet light for screen-heavy days.",
+    retailPriceCents: 4000,
+    active: true,
+    sortOrder: 1,
+  },
+];
+
 export function createDefaultConfiguration(): PricingConfiguration {
   return {
     schemaVersion: SCHEMA_VERSION,
-    officeName: "Sample Optical Office",
+    officeName: "Your Optical Office",
     disclaimerText:
       "This is an estimate only and may be subject to insurance verification, plan-year benefit changes, and final prescription requirements.",
     // Off by default: customer-facing quotes show generalized product names,
@@ -385,6 +413,7 @@ export function createDefaultConfiguration(): PricingConfiguration {
     photochromicProducts: photochromicProducts.map((item) => ({ ...item })),
     photochromicColors: photochromicColors.map((item) => ({ ...item })),
     tints: createDefaultTintConfig(),
+    blueLightOptions: blueLightOptions.map((item) => ({ ...item })),
     transitionsSurfacingFeeCents: 3000,
     highCylinderSurfacingFeeCents: 4500,
     highCylinderThresholdDiopters: -2,
@@ -404,6 +433,8 @@ export function createDefaultConfiguration(): PricingConfiguration {
       coatingCoverage: { type: "retail" },
       photochromicCoverage: { type: "retail" },
       tintCoverage: { type: "retail" },
+      blueLightCoverage: { type: "retail" },
+      surfacingCoverage: { type: "retail" },
       otherCopayCents: 0,
       additionalAllowanceCents: 0,
       otherChargeCents: 0,

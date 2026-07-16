@@ -2,6 +2,7 @@ import { generateId } from "@/lib/id";
 import { clampNonNegative, sumCents } from "@/lib/money";
 import { conditionalFeeRules, type ConditionalFeeCandidate } from "@/lib/calculation/rules";
 import { findMaterialPrice } from "@/lib/calculation/materialPricing";
+import { materialSupportsLensType, materialSupportsProgressiveDesign } from "@/lib/calculation/materialCompatibility";
 import { resolveTint } from "@/lib/calculation/tintPricing";
 import type {
   AllowanceBreakdown,
@@ -23,6 +24,8 @@ import type {
 const CUSTOMER_COATING_LABEL = "Premium Anti-Reflective Coating";
 const CUSTOMER_PHOTOCHROMIC_LABEL = "Photochromic Lens Upgrade";
 const CUSTOMER_TINT_LABEL = "Tinted Lenses";
+const CUSTOMER_BLUE_LIGHT_LABEL = "Blue Light Lens Option";
+const SURFACING_LABEL = "Custom Lens Surfacing";
 
 /**
  * Pure calculation engine for the optical quote calculator.
@@ -149,6 +152,7 @@ export function calculateQuote(
   let coatingRetailCents = 0;
   let photochromicRetailCents = 0;
   let tintRetailCents = 0;
+  let blueLightRetailCents = 0;
 
   const isProgressive = lensType?.key === "progressive";
 
@@ -199,7 +203,20 @@ export function calculateQuote(
   // name is promoted into the primary line-item label (not buried in the
   // description) so it always appears correctly and prominently in every
   // summary and printout that renders line-item labels.
-  if (!isFrameOnly && material && lensType && (!isProgressive || progressiveDesign)) {
+  const materialIncompatible =
+    !isFrameOnly &&
+    material &&
+    lensType &&
+    (!materialSupportsLensType(material, lensType.id) ||
+      (isProgressive && progressiveDesign && !materialSupportsProgressiveDesign(material, progressiveDesign.id)));
+
+  if (materialIncompatible && material && lensType) {
+    warnings.push(
+      `${material.name} is not available for ${lensType.name}${
+        progressiveDesign ? ` (${progressiveDesign.name})` : ""
+      }. Choose a compatible material or lens type.`
+    );
+  } else if (!isFrameOnly && material && lensType && (!isProgressive || progressiveDesign)) {
     const matchedPrice = findMaterialPrice(material, lensType, progressiveDesign?.id ?? null);
 
     if (!matchedPrice) {
@@ -292,66 +309,91 @@ export function calculateQuote(
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Conditional fee rules (e.g. Transitions custom-color surfacing fee,      */
-  /* high-cylinder surfacing fee). Rules sharing a stacking group are         */
-  /* mutually exclusive: only the highest-amount eligible candidate in a      */
-  /* group is charged, but every eligible candidate's reason is preserved     */
-  /* in `surfacingFeeReasons` for the Internal Order Worksheet. The           */
-  /* patient-facing line item never reveals a prescription-derived reason.    */
+  /* Blue Light (independent configurable lens option).                       */
   /* ---------------------------------------------------------------------- */
-  let feeRetailCents = 0;
+  const blueLight =
+    !isFrameOnly && input.blueLightId
+      ? config.blueLightOptions.find((option) => option.id === input.blueLightId && option.active)
+      : undefined;
+  if (!isFrameOnly && input.blueLightId && !blueLight) {
+    warnings.push("The previously selected Blue Light option is no longer available and was excluded from this quote.");
+  }
+  if (blueLight && blueLight.retailPriceCents > 0) {
+    blueLightRetailCents = blueLight.retailPriceCents;
+    lineItems.push({
+      id: generateId("blue_light"),
+      label: blueLight.name,
+      customerLabel: blueLight.customerLabel?.trim() || CUSTOMER_BLUE_LIGHT_LABEL,
+      description: blueLight.description,
+      category: "blue_light",
+      amountCents: blueLightRetailCents,
+      calculationSource: "configured",
+    });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Custom Lens Surfacing — a SELECTABLE option that auto-recommends itself. */
+  /* The high-cylinder and Transitions custom-color rules still qualify a     */
+  /* quote (and preserve every reason for the Internal Worksheet), but the    */
+  /* optician can always toggle it. Only ONE surfacing fee is ever charged.   */
+  /* When manually enabled with no rule qualifying, the configured base       */
+  /* surfacing fee (highCylinderSurfacingFeeCents) is used.                   */
+  /* ---------------------------------------------------------------------- */
+  let surfacingRetailCents = 0;
   const surfacingFeeReasons: SurfacingFeeReason[] = [];
+  let surfacingRecommended = false;
+  let surfacingEnabled = false;
+  let surfacingRecommendationNote: string | null = null;
+
   if (!isFrameOnly) {
     const candidates: ConditionalFeeCandidate[] = [];
     for (const rule of conditionalFeeRules) {
       const candidate = rule.evaluate({ input, config, lensType, material, photochromicProduct, photochromicColor });
       if (candidate) candidates.push(candidate);
     }
+    surfacingRecommended = candidates.length > 0;
 
-    const grouped = new Map<string, ConditionalFeeCandidate[]>();
-    const ungrouped: ConditionalFeeCandidate[] = [];
-    for (const candidate of candidates) {
-      if (candidate.stackingGroup) {
-        const list = grouped.get(candidate.stackingGroup) ?? [];
-        list.push(candidate);
-        grouped.set(candidate.stackingGroup, list);
-      } else {
-        ungrouped.push(candidate);
-      }
-    }
-
-    for (const candidate of ungrouped) {
-      feeRetailCents += candidate.amountCents;
-      lineItems.push({
-        id: generateId("fee"),
-        label: candidate.patientLabel,
-        customerLabel: candidate.patientLabel,
-        category: "fee",
-        amountCents: candidate.amountCents,
-        calculationSource: "rule",
-      });
-      if (candidate.customerWarning) warnings.push(candidate.customerWarning);
-    }
-
-    for (const group of grouped.values()) {
-      const winner = [...group].sort((a, b) => b.amountCents - a.amountCents)[0];
-      feeRetailCents += winner.amountCents;
-      lineItems.push({
-        id: generateId("fee"),
-        label: winner.patientLabel,
-        customerLabel: winner.patientLabel,
-        category: "fee",
-        amountCents: winner.amountCents,
-        calculationSource: "rule",
-      });
-      if (winner.customerWarning) warnings.push(winner.customerWarning);
-      for (const candidate of group) {
+    // The single recommended fee = the highest-amount qualifying candidate
+    // (rules never stack). Every candidate reason is preserved internally.
+    let winner: ConditionalFeeCandidate | undefined;
+    if (candidates.length > 0) {
+      winner = [...candidates].sort((a, b) => b.amountCents - a.amountCents)[0];
+      for (const candidate of candidates) {
         surfacingFeeReasons.push({
           key: candidate.key,
           label: candidate.internalReasonLabel,
           amountCents: candidate.amountCents,
-          charged: candidate.key === winner.key,
+          charged: false, // set below once we know the enabled/charged fee
         });
+      }
+      surfacingRecommendationNote = winner.customerWarning ?? null;
+    }
+
+    // Enabled = manual override when set, otherwise the recommendation.
+    surfacingEnabled = input.surfacingOverride ?? surfacingRecommended;
+
+    if (surfacingEnabled) {
+      // Recommended → charge the winning candidate; manual-on without a rule →
+      // charge the configured base surfacing fee.
+      surfacingRetailCents = winner ? winner.amountCents : clampNonNegative(config.highCylinderSurfacingFeeCents);
+      if (surfacingRetailCents > 0) {
+        lineItems.push({
+          id: generateId("fee"),
+          label: SURFACING_LABEL,
+          customerLabel: SURFACING_LABEL,
+          category: "fee",
+          amountCents: surfacingRetailCents,
+          calculationSource: "rule",
+        });
+        if (winner) {
+          const reason = surfacingFeeReasons.find((r) => r.key === winner!.key);
+          if (reason) reason.charged = true;
+          if (winner.customerWarning) warnings.push(winner.customerWarning);
+        } else {
+          warnings.push("Custom Lens Surfacing was added manually.");
+        }
+      } else {
+        surfacingEnabled = false; // nothing to charge (fee configured at 0)
       }
     }
   }
@@ -459,10 +501,11 @@ export function calculateQuote(
     const coatingCat = resolveCategory(coverage.coatingCoverage, coatingRetailCents);
     const photochromicCat = resolveCategory(coverage.photochromicCoverage, photochromicRetailCents);
     const tintCat = resolveCategory(coverage.tintCoverage, tintRetailCents);
+    const blueLightCat = resolveCategory(coverage.blueLightCoverage, blueLightRetailCents);
+    const surfacingCat = resolveCategory(coverage.surfacingCoverage, surfacingRetailCents);
 
-    // Surfacing fees and manual charges are always patient-owed at retail
-    // and are eligible for the lens allowance pool.
-    const feeEligibleCents = clampNonNegative(feeRetailCents);
+    // Manual charges are always patient-owed at retail and eligible for the
+    // lens allowance pool.
     const chargeEligibleCents = clampNonNegative(chargeTotalCents);
 
     // Allowances reduce their eligible retail pool, capped so they can never
@@ -476,7 +519,8 @@ export function calculateQuote(
         coatingCat.eligibleRetailCents +
         photochromicCat.eligibleRetailCents +
         tintCat.eligibleRetailCents +
-        feeEligibleCents +
+        blueLightCat.eligibleRetailCents +
+        surfacingCat.eligibleRetailCents +
         chargeEligibleCents
     );
     const lensAllowanceResult = applyAllowance(coverage.lensAllowanceCents, lensPoolEligibleCents);
@@ -500,13 +544,17 @@ export function calculateQuote(
       lensCat.coveredInsuranceCents +
       coatingCat.coveredInsuranceCents +
       photochromicCat.coveredInsuranceCents +
-      tintCat.coveredInsuranceCents;
+      tintCat.coveredInsuranceCents +
+      blueLightCat.coveredInsuranceCents +
+      surfacingCat.coveredInsuranceCents;
     const copayInsuranceTotalCents =
       frameCat.copayInsuranceCents +
       lensCat.copayInsuranceCents +
       coatingCat.copayInsuranceCents +
       photochromicCat.copayInsuranceCents +
-      tintCat.copayInsuranceCents;
+      tintCat.copayInsuranceCents +
+      blueLightCat.copayInsuranceCents +
+      surfacingCat.copayInsuranceCents;
 
     const otherCopayCents = clampNonNegative(coverage.otherCopayCents);
     copayTotalCents =
@@ -515,6 +563,8 @@ export function calculateQuote(
       coatingCat.copayPatientCents +
       photochromicCat.copayPatientCents +
       tintCat.copayPatientCents +
+      blueLightCat.copayPatientCents +
+      surfacingCat.copayPatientCents +
       otherCopayCents;
 
     nonCoveredChargeCents = clampNonNegative(coverage.otherChargeCents);
@@ -554,11 +604,15 @@ export function calculateQuote(
       coatingCoveredCents: coatingCat.coveredInsuranceCents,
       photochromicCoveredCents: photochromicCat.coveredInsuranceCents,
       tintCoveredCents: tintCat.coveredInsuranceCents,
+      blueLightCoveredCents: blueLightCat.coveredInsuranceCents,
+      surfacingCoveredCents: surfacingCat.coveredInsuranceCents,
       frameCopayCents: frameCat.copayPatientCents,
       lensCopayCents: lensCat.copayPatientCents,
       coatingCopayCents: coatingCat.copayPatientCents,
       photochromicCopayCents: photochromicCat.copayPatientCents,
       tintCopayCents: tintCat.copayPatientCents,
+      blueLightCopayCents: blueLightCat.copayPatientCents,
+      surfacingCopayCents: surfacingCat.copayPatientCents,
       otherCopayCents,
       otherChargeCents: nonCoveredChargeCents,
     };
@@ -580,6 +634,10 @@ export function calculateQuote(
     allowanceBreakdown,
     insuranceBreakdown,
     surfacingFeeReasons,
+    surfacingRecommended,
+    surfacingEnabled,
+    surfacingFeeCents: surfacingRetailCents,
+    surfacingRecommendationNote,
     patientResponsibilityCents,
     isManualOverride,
     overrideNote,

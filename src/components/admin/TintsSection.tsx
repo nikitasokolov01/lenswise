@@ -19,7 +19,7 @@ interface TintsSectionProps {
 
 export function TintsSection({ tints, onChange }: TintsSectionProps) {
   function handleRestoreDefaults() {
-    if (window.confirm("Restore demonstration tint colors and pricing? This replaces the current tint configuration.")) {
+    if (window.confirm("Restore default tint colors and pricing? This replaces the current tint configuration.")) {
       onChange(createDefaultTintConfig());
     }
   }
@@ -127,7 +127,7 @@ export function TintsSection({ tints, onChange }: TintsSectionProps) {
 
         <Button variant="secondary" size="sm" onClick={handleRestoreDefaults}>
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          Restore demonstration tint defaults
+          Restore tint defaults
         </Button>
       </CardContent>
     </Card>
