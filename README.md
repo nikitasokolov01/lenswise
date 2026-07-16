@@ -38,6 +38,41 @@ See **[docs/SUPABASE_SETUP.md](./docs/SUPABASE_SETUP.md)** and
 `.env.example` for required variables. Database migrations are in
 `supabase/migrations/`.
 
+## Billing (Stripe)
+
+LensWise bills per **organization** with **Stripe Billing**: one organization =
+one Stripe customer = one subscription. Employees inherit access from their org;
+there is no per-employee billing. There is one plan — **LensWise Professional**,
+a monthly recurring subscription whose Price ID is read from `STRIPE_PRICE_ID`
+(no Stripe IDs are hardcoded).
+
+- **14-day free trial.** New organizations start a 14-day trial at creation with
+  **no payment method required**; the trial end is stored on the org. After the
+  trial an active subscription is required.
+- **Hosted Stripe surfaces only.** Sign-up/upgrade uses **Stripe Checkout**;
+  payment methods, invoices, cancellation, and resumption use the hosted
+  **Stripe Customer Portal**. LensWise never renders a custom card form.
+- **Webhook is the source of truth.** `/api/stripe/webhook` verifies the Stripe
+  signature against `STRIPE_WEBHOOK_SECRET` using the raw body and idempotently
+  synchronizes subscription state. The Checkout success redirect never grants
+  access.
+- **Access rules.** `trialing`/`active` → full access; `past_due` → access with
+  a warning banner; `canceled`/`unpaid`/`incomplete`/`incomplete_expired` →
+  blocked with a reactivation screen. Super Admin always retains Platform Admin
+  access regardless of Stripe.
+- **Security.** Only Owners/Admins can create Checkout/Portal sessions; the
+  organization is resolved from the trusted server context (never the browser);
+  the Stripe secret/webhook/price keys are server-only (`src/lib/stripe/*` is
+  marked `server-only`); billing sync fields have no client write policy in the
+  database, so clients can never set themselves to `active`/`trialing`.
+- **Billing page.** Owners/Admins get a **Billing** page (plan, status, trial
+  end + days remaining, renewal/period end, cancel-at-period-end, billing email)
+  with the correct **Start Subscription / Upgrade / Manage Billing** button for
+  the current status. Staff never see billing controls.
+
+Full setup (products, prices, keys, CLI, webhooks, portal, test cards) is in
+**[docs/STRIPE_SETUP.md](./docs/STRIPE_SETUP.md)**.
+
 ---
 
 ### The quote builder (unchanged core)
@@ -181,10 +216,18 @@ Quote Builder discards the in-progress quote entirely, by design.
 1. Push this project to a Git repository (GitHub, GitLab, or Bitbucket).
 2. In Vercel, choose **Add New → Project** and import the repository. Vercel
    auto-detects Next.js — no custom build configuration is required.
-3. Under **Environment Variables**, add:
-   - `NEXT_PUBLIC_DEMO_ADMIN_PIN` — your chosen demonstration PIN (optional; defaults
-     to `1234` if omitted, with a visible warning).
-4. Deploy. No database, external API keys, or paid services are required.
+3. Under **Environment Variables**, add the Supabase, site-URL, and Stripe
+   variables from `.env.example` (see also `docs/VERCEL_DEPLOYMENT.md` and
+   `docs/STRIPE_SETUP.md`):
+   - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+     `SUPABASE_SERVICE_ROLE_KEY`, `LENSWISE_SUPER_ADMIN_EMAIL`.
+   - Site: `NEXT_PUBLIC_SITE_URL` (your production URL, no trailing slash).
+   - Stripe (public): `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
+   - Stripe (server-only): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+     `STRIPE_PRICE_ID`.
+4. Add the production Stripe webhook endpoint
+   `https://YOUR_DOMAIN/api/stripe/webhook` and set its signing secret as the
+   production `STRIPE_WEBHOOK_SECRET`.
 5. Because pricing is stored in each visitor's browser LocalStorage, every device that
    opens the deployed app starts from the same seeded demonstration pricing until
    someone edits and saves it on that device.

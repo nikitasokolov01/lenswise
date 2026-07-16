@@ -27,6 +27,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         role: ctx.role,
         isSuperAdmin: ctx.isSuperAdmin,
         themePreference: ctx.themePreference,
+        billing: ctx.billing,
+        showBillingBanner: true,
       }}
     >
       {children}

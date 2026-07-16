@@ -25,7 +25,9 @@ export default async function PlatformAdminPage() {
 
   const { data: orgsData } = await supabase
     .from("organizations")
-    .select("id,name,status,created_at, organization_members(role, profiles(email)), pricing_configurations(updated_at)")
+    .select(
+      "id,name,status,created_at, organization_members(role, profiles(email)), pricing_configurations(updated_at), organization_billing(subscription_status, trial_end, current_period_end, stripe_customer_id, stripe_subscription_id)"
+    )
     .order("created_at", { ascending: false });
 
   type KeyRow = {
@@ -39,6 +41,13 @@ export default async function PlatformAdminPage() {
     registration_key_redemptions: { organizations: { name: string } | null }[] | null;
   };
   type OrgMemberRow = { role: string; profiles: { email: string | null } | null };
+  type BillingRow = {
+    subscription_status: string | null;
+    trial_end: string | null;
+    current_period_end: string | null;
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+  };
   type OrgRow = {
     id: string;
     name: string;
@@ -46,10 +55,22 @@ export default async function PlatformAdminPage() {
     created_at: string;
     organization_members: OrgMemberRow[] | null;
     pricing_configurations: { updated_at: string }[] | null;
+    organization_billing: BillingRow[] | BillingRow | null;
   };
 
   const keys = (keysData ?? []) as unknown as KeyRow[];
   const orgs = (orgsData ?? []) as unknown as OrgRow[];
+
+  const billingOf = (o: OrgRow): BillingRow | null =>
+    Array.isArray(o.organization_billing)
+      ? o.organization_billing[0] ?? null
+      : o.organization_billing ?? null;
+  const shortId = (id: string | null): string => (id ? `${id.slice(0, 14)}…` : "—");
+  const fmtDate = (iso: string | null): string => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -125,16 +146,19 @@ export default async function PlatformAdminPage() {
                 <th className="py-2 pr-3">Name</th>
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Owner</th>
-                <th className="py-2 pr-3">Members</th>
+                <th className="py-2 pr-3">Subscription</th>
+                <th className="py-2 pr-3">Trial end</th>
+                <th className="py-2 pr-3">Period end</th>
+                <th className="py-2 pr-3">Stripe customer</th>
+                <th className="py-2 pr-3">Stripe subscription</th>
                 <th className="py-2 pr-3">Created</th>
-                <th className="py-2 pr-3">Pricing updated</th>
                 <th className="py-2" />
               </tr>
             </thead>
             <tbody>
               {orgs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-3 text-navy-400">
+                  <td colSpan={10} className="py-3 text-navy-400">
                     No organizations yet.
                   </td>
                 </tr>
@@ -144,7 +168,7 @@ export default async function PlatformAdminPage() {
                   const owner = members.find(
                   (m: { role: string }) => m.role === "owner"
                   );
-                  const pricingUpdated = o.pricing_configurations?.[0]?.updated_at ?? null;
+                  const billing = billingOf(o);
                   return (
                     <tr key={o.id} className="border-b border-navy-50">
                       <td className="py-2 pr-3 text-navy-800">{o.name}</td>
@@ -152,11 +176,12 @@ export default async function PlatformAdminPage() {
                         <span className={o.status === "disabled" ? "text-red-600" : "text-teal-700"}>{o.status}</span>
                       </td>
                       <td className="py-2 pr-3">{owner?.profiles?.email ?? "—"}</td>
-                      <td className="py-2 pr-3 tabular-nums">{members.length}</td>
+                      <td className="py-2 pr-3">{billing?.subscription_status ?? "—"}</td>
+                      <td className="py-2 pr-3">{fmtDate(billing?.trial_end ?? null)}</td>
+                      <td className="py-2 pr-3">{fmtDate(billing?.current_period_end ?? null)}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-navy-600">{shortId(billing?.stripe_customer_id ?? null)}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-navy-600">{shortId(billing?.stripe_subscription_id ?? null)}</td>
                       <td className="py-2 pr-3">{new Date(o.created_at).toLocaleDateString()}</td>
-                      <td className="py-2 pr-3">
-                        {pricingUpdated ? new Date(pricingUpdated).toLocaleDateString() : "—"}
-                      </td>
                       <td className="py-2 text-right">
                         <OrgStatusButton id={o.id} status={o.status} />
                       </td>

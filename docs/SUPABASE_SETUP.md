@@ -36,6 +36,9 @@ The migrations live in `supabase/migrations/`:
 - `20240601000001_functions_rls.sql` — helper functions, RLS policies, audit
   triggers, and the atomic `redeem_key_and_create_org` / `accept_invitation` /
   `promote_super_admin` functions
+- `20240601000002_theme_preference.sql` — per-account light/dark/system theme
+- `20240601000003_billing.sql` — `organization_billing` table + RLS, the 14-day
+  trial provisioned on registration, and a backfill for existing organizations
 
 **Option A — Supabase CLI (recommended):**
 
@@ -61,10 +64,19 @@ files in filename order (schema first, then functions/RLS).
 | `registration_key_redemptions` | one row per successful redemption |
 | `invitations` | employee invites (`admin` / `staff` only) |
 | `pricing_configurations` | per-org pricing JSONB (existing schema, versioned) |
-| `audit_log` | pricing/role/key/org events (never secrets) |
+| `audit_log` | pricing/role/key/org/billing events (never secrets) |
+| `organization_billing` | per-org Stripe subscription state (read-only to clients) |
 
 RLS is enabled on **all** of them. Tenant isolation is enforced in the
-database, not the frontend.
+database, not the frontend. `organization_billing` is **readable** by org
+members but has **no client write policy** — only the service-role webhook
+handler and `SECURITY DEFINER` functions write Stripe-sync fields, so a browser
+client can never set itself to `active`/`trialing`.
+
+> **Stripe.** After applying migrations, configure Stripe Billing and the
+> webhook as described in **[STRIPE_SETUP.md](./STRIPE_SETUP.md)**. Registration
+> automatically starts a 14-day trial; no Stripe action is needed to onboard a
+> new organization.
 
 ## 4. Bootstrap the Super Admin
 
@@ -94,16 +106,25 @@ There is intentionally **no UI** to become Super Admin.
 
 ## 6. Environment variables
 
-Copy `.env.example` → `.env.local` and fill in the four values from steps 1 & 4:
+Copy `.env.example` → `.env.local` and fill in the Supabase values from steps
+1 & 4 (plus the site URL and Stripe values — see
+[STRIPE_SETUP.md](./STRIPE_SETUP.md)):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...        # secret, server-only
 LENSWISE_SUPER_ADMIN_EMAIL=you@example.com    # secret, server-only
+
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_SECRET_KEY=sk_test_...        # secret, server-only
+STRIPE_WEBHOOK_SECRET=whsec_...      # secret, server-only
+STRIPE_PRICE_ID=price_...            # secret, server-only
 ```
 
-Never expose `SUPABASE_SERVICE_ROLE_KEY` or `LENSWISE_SUPER_ADMIN_EMAIL` with a
+Never expose `SUPABASE_SERVICE_ROLE_KEY`, `LENSWISE_SUPER_ADMIN_EMAIL`,
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, or `STRIPE_PRICE_ID` with a
 `NEXT_PUBLIC_` prefix.
 
 ## 7. Verify isolation

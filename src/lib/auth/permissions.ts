@@ -18,7 +18,8 @@ export type ProtectedArea =
   | "organization_status"
   | "pricing_update"
   | "invitation_create"
-  | "role_change";
+  | "role_change"
+  | "billing";
 
 export interface Actor {
   role: OrgRole | null; // null when the user has no membership in the active org
@@ -78,6 +79,8 @@ export function canAccess(area: ProtectedArea, actor: Actor): boolean {
     case "invitation_create":
     case "role_change":
       return canManageTeam(actor.role) || actor.isSuperAdmin;
+    case "billing":
+      return isOwnerOrAdmin(actor.role) || actor.isSuperAdmin;
     default:
       return false;
   }

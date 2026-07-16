@@ -24,12 +24,24 @@ In **Project → Settings → Environment Variables**, add the following for the
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key | Public |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key | **Secret** |
 | `LENSWISE_SUPER_ADMIN_EMAIL` | your Super Admin email | **Secret** |
+| `NEXT_PUBLIC_SITE_URL` | production URL, e.g. `https://your-app.vercel.app` (no trailing slash) | Public |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (`pk_live_…`) | Public |
+| `STRIPE_SECRET_KEY` | Stripe secret key (`sk_live_…`) | **Secret** |
+| `STRIPE_WEBHOOK_SECRET` | signing secret of the **production** webhook endpoint (`whsec_…`) | **Secret** |
+| `STRIPE_PRICE_ID` | LensWise Professional monthly Price ID (`price_…`) | **Secret** |
 
-- Only the two `NEXT_PUBLIC_*` values are sent to the browser.
-- `SUPABASE_SERVICE_ROLE_KEY` and `LENSWISE_SUPER_ADMIN_EMAIL` must **never** carry a
+- Only the `NEXT_PUBLIC_*` values are sent to the browser — including
+  `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, which is safe to expose.
+- `SUPABASE_SERVICE_ROLE_KEY`, `LENSWISE_SUPER_ADMIN_EMAIL`, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` must **never** carry a
   `NEXT_PUBLIC_` prefix — they are read only in Server Actions / Route Handlers.
 - Vercel encrypts environment variables at rest; secrets are not exposed in the
   client bundle.
+- After the first deploy, add a Stripe **production** webhook endpoint at
+  `https://YOUR_DOMAIN/api/stripe/webhook` (events listed in
+  `docs/STRIPE_SETUP.md`) and paste its signing secret into
+  `STRIPE_WEBHOOK_SECRET`, then redeploy. The production signing secret differs
+  from the local `stripe listen` one.
 
 ## 4. Supabase Auth redirect URLs
 

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { Glasses, Settings, Users, Building2, ShieldCheck } from "lucide-react";
+import { Glasses, Settings, Users, Building2, ShieldCheck, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingRepositoryProvider } from "@/lib/pricing/repositoryContext";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import { ThemeAccountSync, type Theme } from "@/components/theme/ThemeProvider";
+import { BillingBanner } from "@/components/billing/BillingBanner";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
+import { billingBanner, type OrgBilling } from "@/lib/billing/status";
 
 export interface ShellContext {
   userId: string;
@@ -19,6 +21,10 @@ export interface ShellContext {
   role: OrgRole | null;
   isSuperAdmin: boolean;
   themePreference: Theme;
+  /** Billing snapshot for the nav Billing link + banner (null for no-org users). */
+  billing: OrgBilling | null;
+  /** Suppressed inside Platform Admin so Super Admin sees no billing banner. */
+  showBillingBanner: boolean;
 }
 
 /**
@@ -36,12 +42,16 @@ export function AppShell({ context, children }: { context: ShellContext; childre
     { href: "/admin", label: "Admin Pricing", icon: Settings, show: ownerOrAdmin },
     { href: "/team", label: "Team", icon: Users, show: ownerOrAdmin },
     { href: "/organization", label: "Organization", icon: Building2, show: ownerOrAdmin },
+    { href: "/billing", label: "Billing", icon: CreditCard, show: ownerOrAdmin },
     { href: "/platform-admin", label: "Platform Admin", icon: ShieldCheck, show: context.isSuperAdmin },
   ];
+
+  const banner = context.showBillingBanner ? billingBanner(context.billing) : null;
 
   const shell = (
     <div className="min-h-screen">
       <ThemeAccountSync accountTheme={context.themePreference} />
+      {banner ? <BillingBanner banner={banner} canManage={ownerOrAdmin} /> : null}
       <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-white pt-safe-top">
         <div className="mx-auto flex max-w-6xl items-center gap-1 px-4 sm:px-6 lg:px-8">
           <span className="mr-2 flex items-baseline gap-1.5 py-3">

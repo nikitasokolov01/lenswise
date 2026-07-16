@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSuperAdminEmail } from "@/lib/env";
 import type { OrgRole } from "@/lib/auth/permissions";
+import { normalizeStatus, type OrgBilling } from "@/lib/billing/status";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -13,6 +14,8 @@ export interface AuthContext {
   role: OrgRole | null;
   isSuperAdmin: boolean;
   themePreference: ThemePreference;
+  /** The organization's Stripe billing snapshot (null when the user has no org). */
+  billing: OrgBilling | null;
 }
 
 /**
@@ -69,6 +72,40 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const orgRow = membershipRow?.organizations ?? null;
   const organization = orgRow ? { id: orgRow.id, name: orgRow.name, status: orgRow.status } : null;
 
+  let billing: OrgBilling | null = null;
+  if (organization) {
+    const { data: billingRow } = await supabase
+      .from("organization_billing")
+      .select(
+        "subscription_status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_end, cancel_at_period_end, trial_end, billing_email"
+      )
+      .eq("organization_id", organization.id)
+      .maybeSingle();
+
+    if (billingRow) {
+      const row = billingRow as {
+        subscription_status: string | null;
+        stripe_customer_id: string | null;
+        stripe_subscription_id: string | null;
+        stripe_price_id: string | null;
+        current_period_end: string | null;
+        cancel_at_period_end: boolean | null;
+        trial_end: string | null;
+        billing_email: string | null;
+      };
+      billing = {
+        status: row.subscription_status ? normalizeStatus(row.subscription_status) : null,
+        stripeCustomerId: row.stripe_customer_id,
+        stripeSubscriptionId: row.stripe_subscription_id,
+        stripePriceId: row.stripe_price_id,
+        currentPeriodEnd: row.current_period_end,
+        cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+        trialEnd: row.trial_end,
+        billingEmail: row.billing_email,
+      };
+    }
+  }
+
   return {
     user: { id: user.id, email: user.email ?? "" },
     fullName: (profile?.full_name as string | null) ?? null,
@@ -76,5 +113,6 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     role: membershipRow?.role ?? null,
     isSuperAdmin,
     themePreference,
+    billing,
   };
 });

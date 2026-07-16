@@ -8,6 +8,7 @@ import {
   Users,
   Building2,
   ShieldCheck,
+  CreditCard,
   LogOut,
   Sun,
   Moon,
@@ -90,6 +91,7 @@ export function AccountMenu({
           <MenuLink href="/account" icon={User} label="Account Settings" />
           {role === "owner" || role === "admin" ? (
             <>
+              <MenuLink href="/billing" icon={CreditCard} label="Billing" />
               <MenuLink href="/team" icon={Users} label="Team" />
               <MenuLink href="/organization" icon={Building2} label="Organization Settings" />
             </>

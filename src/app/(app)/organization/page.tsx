@@ -1,4 +1,4 @@
-import { requireActiveOrg } from "@/lib/auth/guards";
+import { requireBilledOrg } from "@/lib/auth/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SupabasePricingRepository } from "@/lib/pricing/SupabasePricingRepository";
 import { OrgSettingsForm } from "@/components/organization/OrgSettingsForm";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 export const metadata = { title: "Organization Settings — LensWise" };
 
 export default async function OrganizationPage() {
-  const ctx = await requireActiveOrg();
+  const ctx = await requireBilledOrg();
   const orgId = ctx.organization.id;
   const canEdit = canEditOrganizationSettings(ctx.role);
   const supabase = createSupabaseServerClient();
