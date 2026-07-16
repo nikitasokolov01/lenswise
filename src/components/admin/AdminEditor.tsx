@@ -90,10 +90,10 @@ export function AdminEditor() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-navy-900">Admin Pricing</h1>
+          <h2 className="text-xl font-semibold text-navy-900">Pricing</h2>
           <p className="mt-1 text-sm text-navy-500">
             Pricing is saved to your organization and shared with every employee, across devices.
           </p>

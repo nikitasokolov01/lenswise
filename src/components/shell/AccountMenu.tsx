@@ -2,18 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ChevronDown,
-  User,
-  Users,
-  Building2,
-  ShieldCheck,
-  CreditCard,
-  LogOut,
-  Sun,
-  Moon,
-  Monitor,
-} from "lucide-react";
+import { ChevronDown, User, Settings, ShieldCheck, LogOut, Sun, Moon, Monitor } from "lucide-react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { updateThemePreferenceAction } from "@/app/(app)/account/actions";
 import { useTheme, type Theme } from "@/components/theme/ThemeProvider";
@@ -90,11 +79,7 @@ export function AccountMenu({
 
           <MenuLink href="/account" icon={User} label="Account Settings" />
           {role === "owner" || role === "admin" ? (
-            <>
-              <MenuLink href="/billing" icon={CreditCard} label="Billing" />
-              <MenuLink href="/team" icon={Users} label="Team" />
-              <MenuLink href="/organization" icon={Building2} label="Organization Settings" />
-            </>
+            <MenuLink href="/settings" icon={Settings} label="Settings" />
           ) : null}
           {isSuperAdmin ? <MenuLink href="/platform-admin" icon={ShieldCheck} label="Platform Admin" /> : null}
 

@@ -31,7 +31,7 @@ export default async function SubscriptionInactivePage() {
 
         <div className="mt-6 space-y-3">
           {canManage ? (
-            <Link href="/billing" className="block">
+            <Link href="/settings?section=billing" className="block">
               <Button variant="accent" className="w-full">
                 Manage billing
               </Button>

@@ -6,7 +6,7 @@ database, auth, and platform Super Admin working.
 
 > Phase status: the database foundation (schema, RLS, atomic registration RPC,
 > audit) and the Supabase-backed pricing repository are complete. The auth
-> pages, middleware route protection, registration/team/platform-admin UI, and
+> pages, middleware route protection, registration/platform-admin UI, and
 > the LocalStorage import prompt are wired on top of this foundation.
 
 ## 1. Create the project
@@ -37,8 +37,18 @@ The migrations live in `supabase/migrations/`:
   triggers, and the atomic `redeem_key_and_create_org` / `accept_invitation` /
   `promote_super_admin` functions
 - `20240601000002_theme_preference.sql` — per-account light/dark/system theme
-- `20240601000003_billing.sql` — `organization_billing` table + RLS, the 14-day
-  trial provisioned on registration, and a backfill for existing organizations
+- `20240601000003_billing.sql` — `organization_billing` table + RLS and a
+  backfill for existing organizations
+- `20240601000004_stripe_managed_trial.sql` — makes Stripe the single source of
+  truth for trials: `subscription_status` becomes nullable (no locally-invented
+  trial), registration provisions an **empty** billing row, and existing
+  local-only trials transition cleanly to Stripe-managed billing
+- `20240601000005_settings_pin.sql` — `organization_security` table holding the
+  bcrypt-hashed organization Office PIN (+ brute-force fields), RLS-locked to
+  server-side/service-role access only
+- `20240601000006_remove_team.sql` — Team removed: revokes the invitation-accept
+  RPC and drops the `invitations` client RLS policies (historical data and the
+  `invitations` / `organization_members` tables are preserved)
 
 **Option A — Supabase CLI (recommended):**
 
@@ -62,10 +72,11 @@ files in filename order (schema first, then functions/RLS).
 | `organization_members` | membership + role (`owner` / `admin` / `staff`) |
 | `registration_keys` | Super-Admin keys (hashed, never plaintext) |
 | `registration_key_redemptions` | one row per successful redemption |
-| `invitations` | employee invites (`admin` / `staff` only) |
+| `invitations` | legacy — Team removed; table/data retained but no app access |
 | `pricing_configurations` | per-org pricing JSONB (existing schema, versioned) |
-| `audit_log` | pricing/role/key/org/billing events (never secrets) |
+| `audit_log` | pricing/role/key/org/billing/settings-PIN events (never secrets) |
 | `organization_billing` | per-org Stripe subscription state (read-only to clients) |
+| `organization_security` | per-org Settings PIN (bcrypt hash), server-only — no client access |
 
 RLS is enabled on **all** of them. Tenant isolation is enforced in the
 database, not the frontend. `organization_billing` is **readable** by org
@@ -75,8 +86,9 @@ client can never set itself to `active`/`trialing`.
 
 > **Stripe.** After applying migrations, configure Stripe Billing and the
 > webhook as described in **[STRIPE_SETUP.md](./STRIPE_SETUP.md)**. Registration
-> automatically starts a 14-day trial; no Stripe action is needed to onboard a
-> new organization.
+> creates only an **empty** billing record — **Stripe owns the trial**. The
+> owner starts the 14-day free trial from the Billing page via Stripe Checkout,
+> and the webhook grants access once Stripe reports `trialing`/`active`.
 
 ## 4. Bootstrap the Super Admin
 

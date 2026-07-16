@@ -74,13 +74,19 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
 
   let billing: OrgBilling | null = null;
   if (organization) {
-    const { data: billingRow } = await supabase
+    const admin = createSupabaseAdminClient();
+
+    const { data: billingRow, error: billingError } = await admin
       .from("organization_billing")
       .select(
-        "subscription_status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_end, cancel_at_period_end, trial_end, billing_email"
+        "subscription_status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_end, cancel_at_period_end, trial_end, billing_email, trial_redeemed_at"
       )
       .eq("organization_id", organization.id)
       .maybeSingle();
+
+    if (billingError) {
+      console.error("[auth-context] Failed to load billing:", billingError);
+    }
 
     if (billingRow) {
       const row = billingRow as {
@@ -92,6 +98,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
         cancel_at_period_end: boolean | null;
         trial_end: string | null;
         billing_email: string | null;
+        trial_redeemed_at: string | null;
       };
       billing = {
         status: row.subscription_status ? normalizeStatus(row.subscription_status) : null,
@@ -102,6 +109,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
         cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
         trialEnd: row.trial_end,
         billingEmail: row.billing_email,
+        trialRedeemedAt: row.trial_redeemed_at,
       };
     }
   }

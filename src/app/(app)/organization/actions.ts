@@ -49,7 +49,7 @@ export async function updateOrganizationSettingsAction(
   );
   if (settingsErr) return { error: `Could not save: ${settingsErr.message}` };
 
-  revalidatePath("/organization");
+  revalidatePath("/settings");
   return { ok: true };
 }
 
@@ -65,5 +65,5 @@ export async function updateCustomerDisplayAction(formData: FormData): Promise<v
   const repo = new SupabasePricingRepository(createSupabaseServerClient(), orgId, ctx.user.id);
   const config = await repo.getConfiguration();
   await repo.saveConfiguration({ ...config, showExactTechnologyNamesOnCustomerQuotes: showExact });
-  revalidatePath("/organization");
+  revalidatePath("/settings");
 }

@@ -1,12 +1,6 @@
-import { requireArea } from "@/lib/auth/guards";
-import { AdminEditor } from "@/components/admin/AdminEditor";
+import { redirect } from "next/navigation";
 
-/**
- * Admin Pricing. Access is enforced server-side: only Owners and Admins of an
- * active organization reach this page (Staff are redirected). RLS also blocks
- * Staff from writing pricing, so hiding the nav link is not the only defense.
- */
-export default async function AdminPage() {
-  await requireArea("admin_pricing");
-  return <AdminEditor />;
+/** Admin Pricing has moved into the unified Settings area. */
+export default function AdminRedirectPage() {
+  redirect("/settings?section=pricing");
 }

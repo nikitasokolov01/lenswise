@@ -46,21 +46,39 @@ export interface OrgBilling {
   cancelAtPeriodEnd: boolean;
   trialEnd: string | null;
   billingEmail: string | null;
+  /**
+   * When the organization redeemed its ONE lifetime free trial (or null if it
+   * never has). Set once by the webhook and never cleared — canceling/deleting
+   * a subscription does not restore trial eligibility.
+   */
+  trialRedeemedAt: string | null;
+}
+
+/** Whether the organization has already used its one lifetime free trial. */
+export function hasRedeemedTrial(billing: OrgBilling | null | undefined): boolean {
+  return Boolean(billing?.trialRedeemedAt);
+}
+
+/** Whether the organization is still eligible to start its one free trial. */
+export function isTrialEligible(billing: OrgBilling | null | undefined): boolean {
+  return !hasRedeemedTrial(billing);
 }
 
 /** full = normal access, warn = access + banner, blocked = no app access. */
 export type BillingAccess = "full" | "warn" | "blocked";
 
 /**
- * Access decision from a billing record:
+ * Access decision driven ONLY by the Stripe subscription status (no local trial
+ * flags):
  *  - trialing / active → full
  *  - past_due          → warn (access with a warning banner)
- *  - canceled / unpaid / incomplete / incomplete_expired → blocked
- * A missing record is treated as trialing (grace) — registration always
- * provisions one, and the migration backfills legacy organizations.
+ *  - everything else, including NULL (no Stripe subscription yet), canceled,
+ *    unpaid, incomplete, incomplete_expired → blocked
+ * The organization-disabled override (Platform Admin) is enforced separately in
+ * the server guards and always wins.
  */
 export function billingAccess(billing: OrgBilling | null | undefined): BillingAccess {
-  const status = billing?.status ?? "trialing";
+  const status = billing?.status ?? null;
   if (status === "trialing" || status === "active") return "full";
   if (status === "past_due") return "warn";
   return "blocked";
@@ -70,7 +88,11 @@ export function isBillingBlocked(billing: OrgBilling | null | undefined): boolea
   return billingAccess(billing) === "blocked";
 }
 
-/** Whole days remaining until the trial ends (0 if past, null if no trial). */
+/**
+ * Whole days remaining until the trial ends, computed from Stripe's `trial_end`
+ * timestamp only (0 if past, null when there is no Stripe trial). This is a
+ * pure display of Stripe's value — LensWise never invents a trial date.
+ */
 export function trialDaysRemaining(trialEnd: string | null | undefined): number | null {
   if (!trialEnd) return null;
   const end = new Date(trialEnd).getTime();
@@ -78,13 +100,9 @@ export function trialDaysRemaining(trialEnd: string | null | undefined): number 
   return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
 }
 
+/** True only when Stripe reports the subscription is in its trial. */
 export function isOnTrial(billing: OrgBilling | null | undefined): boolean {
-  return (billing?.status ?? "trialing") === "trialing";
-}
-
-/** Whether a live (paid) subscription exists that the Customer Portal can manage. */
-export function hasManageableSubscription(billing: OrgBilling | null | undefined): boolean {
-  return Boolean(billing?.stripeCustomerId);
+  return billing?.status === "trialing";
 }
 
 export interface BillingBannerData {
@@ -98,7 +116,7 @@ export interface BillingBannerData {
  */
 export function billingBanner(billing: OrgBilling | null | undefined): BillingBannerData | null {
   if (!billing) return null;
-  const status = billing.status ?? "trialing";
+  const status = billing.status;
 
   if (status === "past_due") {
     return {

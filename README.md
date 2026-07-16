@@ -25,7 +25,7 @@ other organization by database-level RLS — not by frontend checks.
   organization, using the **existing `PricingConfiguration` schema and versioned
   migrations**. The `SupabasePricingRepository` implements the same
   `PricingRepository` interface the LocalStorage POC used, so the calculation engine,
-  reducer, quote builder, and Admin Pricing UI are unchanged — only persistence changed.
+  reducer, quote builder, and Pricing UI are unchanged — only persistence changed.
 - **Isolation & safety.** RLS policies scope every table to the member's organization;
   disabled organizations are blocked from reading/writing pricing even with a valid
   session. All privileged operations (key generation, org disable/enable, Super Admin
@@ -46,32 +46,95 @@ there is no per-employee billing. There is one plan — **LensWise Professional*
 a monthly recurring subscription whose Price ID is read from `STRIPE_PRICE_ID`
 (no Stripe IDs are hardcoded).
 
-- **14-day free trial.** New organizations start a 14-day trial at creation with
-  **no payment method required**; the trial end is stored on the org. After the
-  trial an active subscription is required.
-- **Hosted Stripe surfaces only.** Sign-up/upgrade uses **Stripe Checkout**;
-  payment methods, invoices, cancellation, and resumption use the hosted
-  **Stripe Customer Portal**. LensWise never renders a custom card form.
-- **Webhook is the source of truth.** `/api/stripe/webhook` verifies the Stripe
-  signature against `STRIPE_WEBHOOK_SECRET` using the raw body and idempotently
-  synchronizes subscription state. The Checkout success redirect never grants
-  access.
-- **Access rules.** `trialing`/`active` → full access; `past_due` → access with
-  a warning banner; `canceled`/`unpaid`/`incomplete`/`incomplete_expired` →
-  blocked with a reactivation screen. Super Admin always retains Platform Admin
-  access regardless of Stripe.
+- **Stripe is the single source of truth.** The trial, subscription status,
+  trial end, renewal date, and all billing state come **only** from Stripe.
+  LensWise never runs its own trial and never calculates or invents trial dates.
+- **14-day trial lives in Stripe.** Registration creates the organization, owner,
+  and default pricing plus an **empty billing record** — no local trial. The
+  owner clicks **Start Free Trial**, which opens **Stripe Checkout** with a
+  14-day Stripe trial (`trial_period_days: 14`, no charge today). The webhook
+  then reports `trialing` and access is granted.
+- **One free trial per organization, for life.** The trial belongs to the
+  organization — not to a subscription, user, email, browser, or card. A
+  permanent `trial_redeemed_at` marker is set the first time a trial begins and
+  is never cleared, so canceling/deleting/replacing a subscription cannot restore
+  eligibility. After the trial is used, Checkout starts a normal paid
+  subscription (the CTA becomes **Start Subscription**, no trial).
+- **Hosted Stripe surfaces only.** Sign-up uses **Stripe Checkout**; payment
+  methods, invoices, cancellation, and resumption use the hosted **Stripe
+  Customer Portal**. LensWise never renders a custom card form.
+- **Webhook is the only writer of billing state.** `/api/stripe/webhook`
+  verifies the Stripe signature against `STRIPE_WEBHOOK_SECRET` using the raw
+  body and idempotently synchronizes `subscription_status`, `trial_end`,
+  `current_period_end`, `cancel_at_period_end`, `stripe_customer_id`,
+  `stripe_subscription_id`, and `billing_email` from Stripe. The Checkout success
+  redirect never grants access.
+- **Access rules (Stripe status only).** `trialing`/`active` → full access;
+  `past_due` → access with a warning banner; everything else (no subscription
+  yet, `canceled`, `unpaid`, `incomplete`, `incomplete_expired`) → blocked. The
+  only local override is Platform Admin **disabling** an organization, which
+  always blocks it regardless of Stripe. Super Admin always retains Platform
+  Admin access regardless of Stripe.
 - **Security.** Only Owners/Admins can create Checkout/Portal sessions; the
   organization is resolved from the trusted server context (never the browser);
   the Stripe secret/webhook/price keys are server-only (`src/lib/stripe/*` is
   marked `server-only`); billing sync fields have no client write policy in the
   database, so clients can never set themselves to `active`/`trialing`.
-- **Billing page.** Owners/Admins get a **Billing** page (plan, status, trial
-  end + days remaining, renewal/period end, cancel-at-period-end, billing email)
-  with the correct **Start Subscription / Upgrade / Manage Billing** button for
-  the current status. Staff never see billing controls.
+- **Billing lives in Settings → Billing** (see below). Owners/Admins see the
+  Stripe status, trial end + days remaining (from Stripe's `trial_end`),
+  renewal/period end, cancel-at-period-end, and billing email, with the correct
+  **Start Free Trial / Manage Billing** button. A second Checkout is refused
+  while `trialing`/`active`. Staff never see billing controls, and an inactive
+  organization can still reach Settings → Billing to reactivate (no redirect loop).
 
 Full setup (products, prices, keys, CLI, webhooks, portal, test cards) is in
 **[docs/STRIPE_SETUP.md](./docs/STRIPE_SETUP.md)**.
+
+## Settings (Office-PIN protected) & the shared-office account model
+
+LensWise runs on **shared office devices**: each optical office uses **one
+organization owner account** signed in on its workstations/iPads, and staff use
+the **Quote Builder** through that signed-in account. There are **no separate
+employee accounts, roles, or invitations** — Team has been removed.
+
+All organization management lives in a single **Settings** area (there is no
+separate "Admin" in the organization-facing app). One nav item, **Settings**,
+opens tabs for **Organization, Pricing, Customer Display, Security,** and
+**Billing**. **Platform Admin** remains separate and visible only to the LensWise
+super admin; the **Quote Builder** stays the main page.
+
+- **Office PIN — a second factor for shared devices.** Opening the sensitive
+  sections (**Organization, Pricing, Customer Display, Security**) requires a
+  self-defined **Office PIN** (4–8 digits) on top of normal login. It protects
+  office pricing/settings on a shared workstation or iPad — it is **not** a
+  replacement for Supabase auth, RLS, or server-side authorization.
+- **Billing is exempt from the Office PIN.** **Settings → Billing** is always
+  reachable by the authenticated owner — even when the subscription is inactive,
+  the trial has ended, payment is past due, or the PIN is forgotten/unconfigured —
+  so there is no recovery deadlock or redirect loop. Billing still requires the
+  authenticated owner account and existing server-side Stripe authorization.
+- **Lock indicators & unlock.** When locked, protected tabs show a small lock
+  icon while **Billing stays clickable**. Selecting a protected tab shows the
+  Office PIN screen; a correct PIN unlocks **all** protected sections for the
+  session. A visible **Lock Protected Settings** action clears the unlock
+  immediately.
+- **Secure storage.** The PIN is stored only as a **bcrypt hash** in
+  `organization_security` (RLS-locked to server-side/service-role access). The
+  raw PIN is never stored in Supabase, LocalStorage, cookies, logs, or audit
+  metadata, and is hashed/verified only in server actions.
+- **Unlock session.** A correct PIN sets a short-lived (15-minute), HTTP-only,
+  signed cookie that carries no PIN and is re-validated against the authenticated
+  user + organization; it does not persist across browser restarts. Repeated
+  wrong PINs trigger a server-side cooldown and a single generic error.
+- **Security tab.** The owner can create, change, and reset the Office PIN
+  (reset requires only the authenticated owner account; the old PIN is never
+  shown), and lock protected settings.
+- **Audit.** PIN create/change/reset, unlock/lock, and repeated-failure events
+  are recorded — never the PIN or its hash.
+
+Old links redirect into Settings: `/admin → /settings?section=pricing`,
+`/organization → …=organization`, `/billing → …=billing`, and `/team → /settings`
+(Team removed; old invitation links show that invitations are no longer supported).
 
 ---
 

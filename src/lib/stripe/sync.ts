@@ -65,9 +65,10 @@ function customerIdOf(subscription: Stripe.Subscription): string {
  *  2. the subscription's organization_id metadata,
  *  3. the Stripe customer's organization_id metadata.
  */
-export async function resolveOrgIdForSubscription(
+async function resolveOrg(
   admin: SupabaseClient,
-  subscription: Stripe.Subscription
+  subscription: Stripe.Subscription,
+  customer: Stripe.Customer | Stripe.DeletedCustomer
 ): Promise<string | null> {
   const customerId = customerIdOf(subscription);
 
@@ -78,46 +79,113 @@ export async function resolveOrgIdForSubscription(
     .maybeSingle();
   if (data?.organization_id) return data.organization_id as string;
 
-  const metaOrg = subscription.metadata?.organization_id;
-  if (metaOrg) return metaOrg;
+  if (subscription.metadata?.organization_id) return subscription.metadata.organization_id;
 
-  const stripe = getStripe();
-  const customer = await stripe.customers.retrieve(customerId);
-  if (!customer.deleted && customer.metadata?.organization_id) {
-    return customer.metadata.organization_id;
-  }
+  if (!customer.deleted && customer.metadata?.organization_id) return customer.metadata.organization_id;
+
   return null;
 }
 
 /**
  * Idempotently synchronize a Stripe subscription's ABSOLUTE state onto the
- * organization's billing row. Because the whole state is overwritten (never
- * incremented), replaying the same webhook event cannot corrupt billing state.
- * Returns the organization id it synchronized, or null when it could not be
- * resolved.
+ * organization's billing row — the ONLY place billing state changes. Every
+ * value (status, trial_end, current_period_end, cancel_at_period_end,
+ * customer/subscription ids, billing_email) comes directly from Stripe; nothing
+ * is calculated or invented locally. Because the whole state is overwritten
+ * (never incremented) and keyed by organization_id, replaying the same webhook
+ * event cannot corrupt billing state. Returns the org id it synchronized, or
+ * null when it could not be resolved.
  */
+function getCurrentPeriodEnd(
+  subscription: Stripe.Subscription
+): number | null {
+  const topLevelValue = (
+    subscription as Stripe.Subscription & {
+      current_period_end?: unknown;
+    }
+  ).current_period_end;
+
+  if (typeof topLevelValue === "number" && Number.isFinite(topLevelValue)) {
+    return topLevelValue;
+  }
+
+  const firstItem = subscription.items.data[0];
+
+  if (firstItem) {
+    const itemValue = (
+      firstItem as Stripe.SubscriptionItem & {
+        current_period_end?: unknown;
+      }
+    ).current_period_end;
+
+    if (typeof itemValue === "number" && Number.isFinite(itemValue)) {
+      return itemValue;
+    }
+  }
+
+  return null;
+}
+
+function stripeTimestampToIso(
+  timestamp: number | null | undefined
+): string | null {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return new Date(timestamp * 1000).toISOString();
+}
 export async function syncSubscriptionToOrg(
   admin: SupabaseClient,
   subscription: Stripe.Subscription
 ): Promise<{ organizationId: string; status: SubscriptionStatus } | null> {
-  const organizationId = await resolveOrgIdForSubscription(admin, subscription);
+  const stripe = getStripe();
+  const customerId = customerIdOf(subscription);
+
+  // One customer fetch: used for org-metadata fallback AND billing_email.
+  const customer = await stripe.customers.retrieve(customerId);
+  const billingEmail = customer.deleted ? null : customer.email ?? null;
+
+  const organizationId = await resolveOrg(admin, subscription, customer);
   if (!organizationId) return null;
 
   const status = normalizeStatus(subscription.status);
-  const priceId = subscription.items.data[0]?.price.id ?? null;
+  const firstItem = subscription.items.data[0];
+  const priceId = firstItem?.price.id ?? null;
 
-  await admin
-    .from("organization_billing")
-    .update({
-      stripe_customer_id: customerIdOf(subscription),
+  const currentPeriodEnd = getCurrentPeriodEnd(subscription);
+
+  await admin.from("organization_billing").upsert(
+    {
+      organization_id: organizationId,
+      stripe_customer_id: customerId,
       stripe_subscription_id: subscription.id,
       stripe_price_id: priceId,
       subscription_status: status,
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      current_period_end: stripeTimestampToIso(currentPeriodEnd),
       cancel_at_period_end: subscription.cancel_at_period_end,
-      trial_end: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
-    })
-    .eq("organization_id", organizationId);
+      trial_end: stripeTimestampToIso(subscription.trial_end),
+      // Only overwrite billing_email when Stripe has one, so we never wipe it.
+      ...(billingEmail ? { billing_email: billingEmail } : {}),
+    },
+    { onConflict: "organization_id" }
+  );
+
+  // Permanently record the organization's ONE free-trial redemption the first
+  // time a subscription with a trial appears. `.is("trial_redeemed_at", null)`
+  // guarantees this is set at most once and is never cleared afterward — so
+  // canceling/deleting/replacing a subscription can never restore eligibility.
+  const usedTrial = subscription.status === "trialing" || subscription.trial_end != null;
+  if (usedTrial) {
+    await admin
+      .from("organization_billing")
+      .update({
+        trial_redeemed_at: new Date().toISOString(),
+        trial_redeemed_subscription_id: subscription.id,
+      })
+      .eq("organization_id", organizationId)
+      .is("trial_redeemed_at", null);
+  }
 
   return { organizationId, status };
 }

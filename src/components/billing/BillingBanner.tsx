@@ -32,7 +32,10 @@ export function BillingBanner({
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="flex-1">{banner.message}</span>
       {canManage ? (
-        <Link href="/billing" className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80">
+        <Link
+          href="/settings?section=billing"
+          className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+        >
           Manage billing
         </Link>
       ) : null}

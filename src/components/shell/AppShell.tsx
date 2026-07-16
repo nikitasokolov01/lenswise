@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { Glasses, Settings, Users, Building2, ShieldCheck, CreditCard } from "lucide-react";
+import { Glasses, Settings, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingRepositoryProvider } from "@/lib/pricing/repositoryContext";
 import { AccountMenu } from "@/components/shell/AccountMenu";
@@ -39,10 +39,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
 
   const links: { href: string; label: string; icon: typeof Glasses; show: boolean }[] = [
     { href: "/", label: "Quote Builder", icon: Glasses, show: Boolean(context.organizationId) },
-    { href: "/admin", label: "Admin Pricing", icon: Settings, show: ownerOrAdmin },
-    { href: "/team", label: "Team", icon: Users, show: ownerOrAdmin },
-    { href: "/organization", label: "Organization", icon: Building2, show: ownerOrAdmin },
-    { href: "/billing", label: "Billing", icon: CreditCard, show: ownerOrAdmin },
+    { href: "/settings", label: "Settings", icon: Settings, show: ownerOrAdmin },
     { href: "/platform-admin", label: "Platform Admin", icon: ShieldCheck, show: context.isSuperAdmin },
   ];
 

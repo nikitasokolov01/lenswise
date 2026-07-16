@@ -11,14 +11,11 @@ export type OrgRole = "owner" | "admin" | "staff";
 /** Every route/feature that requires more than "signed-in member of an active org". */
 export type ProtectedArea =
   | "admin_pricing"
-  | "team"
   | "organization_settings"
   | "platform_admin"
   | "registration_keys"
   | "organization_status"
   | "pricing_update"
-  | "invitation_create"
-  | "role_change"
   | "billing";
 
 export interface Actor {
@@ -41,25 +38,6 @@ export function canEditOrganizationSettings(role: OrgRole | null): boolean {
   return isOwnerOrAdmin(role);
 }
 
-export function canManageTeam(role: OrgRole | null): boolean {
-  return isOwnerOrAdmin(role);
-}
-
-/** Owner may invite/promote Admins; Admin may only invite/manage Staff. */
-export function canAssignRole(actorRole: OrgRole | null, targetRole: OrgRole): boolean {
-  if (targetRole === "owner") return actorRole === "owner"; // ownership transfer only, by an owner
-  if (targetRole === "admin") return actorRole === "owner"; // only owners create/promote admins
-  if (targetRole === "staff") return isOwnerOrAdmin(actorRole);
-  return false;
-}
-
-/** Roles that may be chosen when inviting a new employee. Never owner, never super admin. */
-export function invitableRoles(actorRole: OrgRole | null): OrgRole[] {
-  if (actorRole === "owner") return ["admin", "staff"];
-  if (actorRole === "admin") return ["staff"];
-  return [];
-}
-
 export function canImportLocalPricing(role: OrgRole | null): boolean {
   return isOwnerOrAdmin(role);
 }
@@ -75,10 +53,6 @@ export function canAccess(area: ProtectedArea, actor: Actor): boolean {
     case "pricing_update":
     case "organization_settings":
       return canEditPricing(actor.role) || actor.isSuperAdmin;
-    case "team":
-    case "invitation_create":
-    case "role_change":
-      return canManageTeam(actor.role) || actor.isSuperAdmin;
     case "billing":
       return isOwnerOrAdmin(actor.role) || actor.isSuperAdmin;
     default:

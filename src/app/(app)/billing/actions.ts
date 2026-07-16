@@ -13,17 +13,41 @@ export interface BillingActionResult {
 }
 
 /**
- * Start (or upgrade to) the LensWise Professional subscription via Stripe
- * Checkout. Owner/Admin only; the organization is resolved from the trusted
- * server context — never from the browser. The webhook (not this redirect) is
- * the source of truth for granting access.
+ * Start the LensWise Professional subscription via Stripe Checkout. Owner/Admin
+ * only; the organization is resolved from the trusted server context — never
+ * from the browser. The webhook (not this redirect) is the source of truth for
+ * granting access. Stripe owns the trial: LensWise never calculates trial dates.
+ *
+ * The 14-day free trial is redeemable ONCE per organization for its lifetime: it
+ * is only offered when the org has never redeemed a trial. If it has (even a
+ * trial it later canceled), Checkout starts a normal paid subscription with no
+ * trial. If the organization already has a live subscription (trialing or
+ * active), no new Checkout Session is created — the caller is sent to Manage
+ * Billing.
  */
 export async function createCheckoutSessionAction(): Promise<BillingActionResult> {
   const ctx = await requireBillingManagement();
   const org = ctx.organization;
 
+  const status = ctx.billing?.status ?? null;
+  if (status === "trialing" || status === "active") {
+    return { error: "You already have an active subscription. Use Manage Billing to make changes." };
+  }
+
   try {
     const admin = createSupabaseAdminClient();
+
+    // The free trial is redeemable ONCE per organization for its lifetime.
+    // Read the redemption marker authoritatively via the service role; if the
+    // organization has already redeemed a trial (even one it later canceled),
+    // this Checkout starts a normal paid subscription with NO trial.
+    const { data: redemption } = await admin
+      .from("organization_billing")
+      .select("trial_redeemed_at")
+      .eq("organization_id", org.id)
+      .maybeSingle();
+    const trialEligible = !(redemption as { trial_redeemed_at: string | null } | null)?.trial_redeemed_at;
+
     const customerId = await getOrCreateStripeCustomer(admin, {
       organizationId: org.id,
       organizationName: org.name,
@@ -33,25 +57,20 @@ export async function createCheckoutSessionAction(): Promise<BillingActionResult
     });
 
     const siteUrl = getSiteUrl();
-    // Preserve any remaining free-trial days so mid-trial upgrades are not
-    // charged until the trial actually ends. Stripe requires a Checkout
-    // trial_end at least 48 hours out; otherwise we omit it and start billing now.
-    const trialEndMs = ctx.billing?.trialEnd ? new Date(ctx.billing.trialEnd).getTime() : 0;
-    const trialInFuture = Number.isFinite(trialEndMs) && trialEndMs > Date.now() + 48 * 60 * 60 * 1000;
-
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: getStripePriceId(), quantity: 1 }],
-      success_url: `${siteUrl}/billing?checkout=success`,
-      cancel_url: `${siteUrl}/billing?checkout=canceled`,
+      success_url: `${siteUrl}/settings?section=billing&checkout=success`,
+      cancel_url: `${siteUrl}/settings?section=billing&checkout=canceled`,
       client_reference_id: org.id,
       allow_promotion_codes: true,
       metadata: { organization_id: org.id, organization_name: org.name },
       subscription_data: {
+        // Grant the 14-day Stripe trial only if the org has never redeemed one.
+        ...(trialEligible ? { trial_period_days: 14 } : {}),
         metadata: { organization_id: org.id, organization_name: org.name },
-        ...(trialInFuture ? { trial_end: Math.floor(trialEndMs / 1000) } : {}),
       },
     });
 
@@ -90,7 +109,7 @@ export async function createPortalSessionAction(): Promise<BillingActionResult> 
     const stripe = getStripe();
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${getSiteUrl()}/billing`,
+      return_url: `${getSiteUrl()}/settings?section=billing`,
     });
     return { url: session.url };
   } catch (err) {

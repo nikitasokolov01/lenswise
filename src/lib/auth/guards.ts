@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getAuthContext, type AuthContext } from "@/lib/auth/context";
-import { canAccess, type ProtectedArea } from "@/lib/auth/permissions";
+import { canAccess, isOwnerOrAdmin, type ProtectedArea } from "@/lib/auth/permissions";
 import { isBillingBlocked } from "@/lib/billing/status";
+import { canAccessSettings } from "@/lib/settings/sections";
 
 type ActiveOrgContext = AuthContext & { organization: NonNullable<AuthContext["organization"]> };
 
@@ -30,16 +31,20 @@ export async function requireActiveOrg(): Promise<ActiveOrgContext> {
 }
 
 /**
- * Require an active organization whose subscription/trial is not blocked. Used
- * by the normal application pages. A blocked organization (canceled / unpaid /
- * incomplete_expired / incomplete) is redirected to /subscription-inactive,
- * which itself does NOT enforce billing (so there is no redirect loop). The
- * disabled-org block still takes precedence via requireActiveOrg.
+ * Require an active organization whose Stripe subscription grants access
+ * (trialing / active, or past_due with a warning). Used by the normal
+ * application pages. When billing is blocked — which now includes a brand-new
+ * organization that has not yet started its Stripe trial (status NULL) as well
+ * as canceled / unpaid / incomplete / incomplete_expired — Owners/Admins are
+ * sent to the Billing page (where they can Start Free Trial or Manage Billing)
+ * and Staff to /subscription-inactive. Neither destination enforces billing, so
+ * there is no redirect loop. The disabled-org block still takes precedence via
+ * requireActiveOrg.
  */
 export async function requireBilledOrg(): Promise<ActiveOrgContext> {
   const ctx = await requireActiveOrg();
   if (isBillingBlocked(ctx.billing)) {
-    redirect("/subscription-inactive");
+    redirect(isOwnerOrAdmin(ctx.role) ? "/settings?section=billing" : "/subscription-inactive");
   }
   return ctx;
 }
@@ -60,11 +65,26 @@ export async function requireArea(area: ProtectedArea): Promise<ActiveOrgContext
 /**
  * Require billing-management access (Owner/Admin of an active org). This does
  * NOT enforce the billing-blocked check, so Owners/Admins can always reach the
- * Billing page and billing actions to reactivate an inactive subscription.
+ * Billing section and billing actions to reactivate an inactive subscription.
  */
 export async function requireBillingManagement(): Promise<ActiveOrgContext> {
   const ctx = await requireActiveOrg();
   if (!canAccess("billing", { role: ctx.role, isSuperAdmin: ctx.isSuperAdmin })) {
+    redirect("/");
+  }
+  return ctx;
+}
+
+/**
+ * Require access to the organization Settings area (Owner/Admin of an active
+ * org). Deliberately does NOT enforce the billing-blocked check so an inactive
+ * organization can still reach Settings → Billing to reactivate. Staff are sent
+ * back to the Quote Builder. The Settings PIN is a SECOND factor enforced on top
+ * of this, never a replacement for it.
+ */
+export async function requireSettingsAccess(): Promise<ActiveOrgContext> {
+  const ctx = await requireActiveOrg();
+  if (!canAccessSettings(ctx.role)) {
     redirect("/");
   }
   return ctx;

@@ -5,9 +5,13 @@ sign-up/upgrade, the hosted **Stripe Customer Portal** for billing management,
 and **Stripe Webhooks** as the source of truth for subscription state.
 
 Billing model: **one organization = one Stripe customer = one subscription.**
-Employees inherit access from their organization. New organizations get a
-**14-day free trial** with no payment method required; after the trial an active
-subscription is required.
+Employees inherit access from their organization. **Stripe is the single source
+of truth** for the trial, subscription status, trial end, and renewal date —
+LensWise never runs its own trial or invents trial dates. Registration creates
+an **empty** billing record; the owner starts the **14-day free trial** from the
+Billing page, which opens Stripe Checkout with a Stripe-managed trial
+(`trial_period_days: 14`, no charge today). The webhook grants access once Stripe
+reports `trialing`/`active`; after the trial an active subscription is required.
 
 There is **one plan**: **LensWise Professional**, a monthly recurring
 subscription. Its Price ID is read from `STRIPE_PRICE_ID` — no Stripe IDs are
@@ -123,17 +127,25 @@ server-side code (`src/lib/stripe/*`, which is marked `server-only`).
 Use Stripe's test cards (https://docs.stripe.com/testing). Keep `stripe listen`
 running so webhooks reach your local app.
 
-**Successful payment**
-1. In LensWise, open **Billing** as an Owner/Admin and click **Start
-   Subscription** / **Upgrade**.
+**Start the free trial**
+1. In LensWise, open **Billing** as an Owner/Admin and click **Start Free
+   Trial**.
 2. In Checkout, use card `4242 4242 4242 4242`, any future expiry, any CVC/ZIP.
+   (Stripe collects a payment method up front, but the 14-day trial means **no
+   charge today**.)
 3. Complete checkout. The `checkout.session.completed` +
-   `customer.subscription.created` webhooks set the org to `active` (or
-   `trialing` if trial time remained). The Billing page reflects it.
+   `customer.subscription.created` webhooks set the org to `trialing` with the
+   Stripe `trial_end`, and access is granted. The Billing page shows "Trialing"
+   and the trial-end date + days remaining (all from Stripe).
+
+**Successful renewal / conversion**
+- When the trial ends Stripe charges the card and the subscription becomes
+  `active` (`customer.subscription.updated` + `invoice.paid`). The Billing page
+  shows "Active" and the renewal date.
 
 **Failed payment**
-- Use `4000 0000 0000 0341` (attaches but fails on the first charge) or trigger
-  a failed renewal via `stripe trigger invoice.payment_failed`. The org moves to
+- Use `4000 0000 0000 0341` (attaches but fails on charge) or trigger a failed
+  renewal via `stripe trigger invoice.payment_failed`. The org moves to
   `past_due` and the past-due banner appears (access continues with a warning).
 
 **Cancellation**
@@ -143,11 +155,12 @@ running so webhooks reach your local app.
   and access is blocked (Owners/Admins can resubscribe from Billing).
 
 **Trial expiration**
-- The trial is stored in the database (`organization_billing.trial_end`). To
-  preview the blocked state without waiting 14 days, cancel/expire the
-  subscription in test mode, or temporarily set `trial_end` to the past in the
-  database. `customer.subscription.trial_will_end` fires ~3 days before a
-  Stripe-tracked trial ends.
+- The trial is entirely Stripe-managed; `organization_billing.trial_end` is only
+  ever a copy of Stripe's value. To preview the blocked/ending state without
+  waiting 14 days, cancel the subscription in test mode, or in the Stripe
+  Dashboard edit the test subscription's trial to end now.
+  `customer.subscription.trial_will_end` fires ~3 days before the Stripe trial
+  ends.
 
 You can also drive events directly, e.g.:
 

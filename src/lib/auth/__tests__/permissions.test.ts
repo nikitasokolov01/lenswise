@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canAccess,
-  canAssignRole,
   canEditPricing,
   canImportLocalPricing,
-  canManageTeam,
-  invitableRoles,
   isPublicPath,
   shouldOfferLocalImport,
 } from "@/lib/auth/permissions";
@@ -16,33 +13,6 @@ describe("permissions", () => {
     expect(canEditPricing("admin")).toBe(true);
     expect(canEditPricing("owner")).toBe(true);
     expect(canEditPricing(null)).toBe(false);
-  });
-
-  it("Owners can manage Admin roles; Admins cannot promote to Admin, Owner, or (ever) Super Admin", () => {
-    // Owner may create/promote admins and transfer ownership.
-    expect(canAssignRole("owner", "admin")).toBe(true);
-    expect(canAssignRole("owner", "owner")).toBe(true);
-    expect(canAssignRole("owner", "staff")).toBe(true);
-    // Admin may only manage staff — never create admins or owners.
-    expect(canAssignRole("admin", "staff")).toBe(true);
-    expect(canAssignRole("admin", "admin")).toBe(false);
-    expect(canAssignRole("admin", "owner")).toBe(false);
-    // Staff cannot assign anything.
-    expect(canAssignRole("staff", "staff")).toBe(false);
-  });
-
-  it("invitable roles never include owner or super admin", () => {
-    expect(invitableRoles("owner")).toEqual(["admin", "staff"]);
-    expect(invitableRoles("admin")).toEqual(["staff"]);
-    expect(invitableRoles("staff")).toEqual([]);
-    // There is no way to express "owner" or a platform role as an invite.
-    expect(invitableRoles("owner")).not.toContain("owner");
-  });
-
-  it("only Owners/Admins manage the team", () => {
-    expect(canManageTeam("owner")).toBe(true);
-    expect(canManageTeam("admin")).toBe(true);
-    expect(canManageTeam("staff")).toBe(false);
   });
 
   it("Platform Admin and platform-only areas require Super Admin — normal users are rejected", () => {
@@ -64,8 +34,8 @@ describe("permissions", () => {
     expect(canAccess("admin_pricing", staff)).toBe(false);
     expect(canAccess("admin_pricing", admin)).toBe(true);
     expect(canAccess("pricing_update", staff)).toBe(false);
-    expect(canAccess("team", staff)).toBe(false);
-    expect(canAccess("team", admin)).toBe(true);
+    expect(canAccess("billing", staff)).toBe(false);
+    expect(canAccess("billing", admin)).toBe(true);
     expect(canAccess("organization_settings", admin)).toBe(true);
   });
 
