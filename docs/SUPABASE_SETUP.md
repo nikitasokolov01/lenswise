@@ -54,6 +54,9 @@ The migrations live in `supabase/migrations/`:
 - `20240601000008_public_onboarding.sql` — `create_org_for_owner`, the keyless
   org-creation RPC used by the Stripe webhook for public self-service onboarding
   (registration-key onboarding is retained for internal use)
+- `20240601000009_complimentary_access.sql` — Platform Admin complimentary-access
+  override columns on `organization_billing` (`lifetime_complimentary` +
+  granted_at/by); server/service-role only, never writable by tenants or Stripe
 
 **Option A — Supabase CLI (recommended):**
 

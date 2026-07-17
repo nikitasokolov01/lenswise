@@ -12,7 +12,9 @@ export type BillingAuditAction =
   | "billing.subscription_activated"
   | "billing.subscription_updated"
   | "billing.subscription_canceled"
-  | "billing.payment_failed";
+  | "billing.payment_failed"
+  | "billing.complimentary_granted"
+  | "billing.complimentary_revoked";
 
 /**
  * Write a billing audit entry via the SECURITY DEFINER write_audit function.

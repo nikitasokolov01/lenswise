@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Clock, CalendarClock } from "lucide-react";
+import { AlertTriangle, Clock, CalendarClock, Sparkles } from "lucide-react";
 import type { BillingBannerData } from "@/lib/billing/status";
 
 /**
@@ -16,8 +16,17 @@ export function BillingBanner({
   banner: BillingBannerData;
   canManage: boolean;
 }) {
-  const amber = banner.kind !== "trial";
-  const Icon = banner.kind === "past_due" ? AlertTriangle : banner.kind === "cancel" ? CalendarClock : Clock;
+  const amber = banner.kind === "past_due" || banner.kind === "cancel";
+  const Icon =
+    banner.kind === "past_due"
+      ? AlertTriangle
+      : banner.kind === "cancel"
+        ? CalendarClock
+        : banner.kind === "info"
+          ? Sparkles
+          : Clock;
+  // Complimentary info banners are calm and never link to a payment action.
+  const showManageLink = canManage && banner.kind !== "info";
 
   return (
     <div
@@ -31,13 +40,13 @@ export function BillingBanner({
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="flex-1">{banner.message}</span>
-      {canManage ? (
+      {showManageLink ? (
         <Link
           href="/settings?section=billing"
           className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
         >
           Manage billing
-        </Link>
+    </Link>
       ) : null}
     </div>
   );

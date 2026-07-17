@@ -12,6 +12,8 @@ function billing(overrides: Partial<OrgBilling>): OrgBilling {
     trialEnd: null,
     billingEmail: null,
     trialRedeemedAt: null,
+    lifetimeComplimentary: false,
+    lifetimeComplimentaryGrantedAt: null,
     ...overrides,
   };
 }

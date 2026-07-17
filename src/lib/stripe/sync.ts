@@ -212,6 +212,10 @@ export async function syncSubscriptionToOrg(
 
   const currentPeriodEnd = getCurrentPeriodEnd(subscription);
 
+  // Upsert ONLY the Stripe-owned columns. The Platform Admin complimentary
+  // override columns (lifetime_complimentary / _granted_at / _granted_by) are
+  // deliberately not listed, so on conflict they are left untouched — Stripe
+  // webhook sync can never overwrite or clear complimentary access.
   await admin.from("organization_billing").upsert(
     {
       organization_id: organizationId,

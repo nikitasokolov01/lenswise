@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { BillingActions } from "@/components/billing/BillingActions";
 import {
   billingAccess,
+  isComplimentary,
   isOnTrial,
   isTrialEligible,
   trialDaysRemaining,
@@ -57,6 +58,45 @@ export function BillingSection({ billing, checkout }: { billing: OrgBilling | nu
   // the CTA becomes "Start Subscription" (a normal paid subscription, no trial).
   const trialEligible = isTrialEligible(billing);
   const startLabel = trialEligible ? "Start Free Trial" : "Start Subscription";
+
+  // Complimentary access is the ACTIVE access method — hide all Stripe start
+  // CTAs and any payment warnings, and only surface Manage Billing when a Stripe
+  // customer already exists (never create one just by visiting Billing).
+  if (isComplimentary(billing)) {
+    const hasStripeRelationship = Boolean(billing?.stripeCustomerId);
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold text-navy-900">Billing</h2>
+          <p className="mt-1 text-sm text-navy-500">Your LensWise access and billing.</p>
+        </div>
+
+        <section className="rounded-lg border border-teal-200 bg-teal-50 p-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-teal-900">Lifetime Complimentary Access</h3>
+            <Badge variant="teal">Complimentary</Badge>
+          </div>
+          <p className="mt-2 text-sm text-teal-900">This organization has complimentary access provided by LensWise.</p>
+
+          {status ? (
+            <dl className="mt-4 space-y-2 border-t border-teal-200 pt-4 text-sm">
+              <Row label="Stripe status" value={STATUS_LABEL[status]} />
+              <p className="text-xs text-teal-800">
+                Complimentary access is the active access method; the Stripe status above is shown for reference only.
+              </p>
+            </dl>
+          ) : null}
+
+          {hasStripeRelationship ? (
+            <div className="mt-5 border-t border-teal-200 pt-5">
+              {/* No start/subscription CTAs — only manage an existing Stripe relationship. */}
+              <BillingActions canStart={false} startLabel="" canManage={true} />
+            </div>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

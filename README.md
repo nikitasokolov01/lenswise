@@ -64,6 +64,17 @@ a monthly recurring subscription whose Price ID is read from `STRIPE_PRICE_ID`
   is never cleared, so canceling/deleting/replacing a subscription cannot restore
   eligibility. After the trial is used, Checkout starts a normal paid
   subscription (the CTA becomes **Start Subscription**, no trial).
+- **Complimentary access (Platform Admin only).** The Super Admin can grant an
+  organization **Lifetime Complimentary Access** — a permanent internal billing
+  override stored on `organization_billing.lifetime_complimentary` (no fake
+  Stripe subscription, coupon, discount, or $0 invoice). `billingAccess()` checks
+  it **before** Stripe status, so a complimentary org has full access even when
+  Stripe is null/canceled/unpaid. It is set only by trusted Super Admin server
+  actions (never by tenants or the browser — RLS blocks client writes), the
+  webhook never touches it (subscription sync upserts only Stripe columns), and
+  it does not change trial history. Platform-Admin-disabled orgs remain blocked
+  regardless. Grants/revocations are audited (`billing.complimentary_granted` /
+  `billing.complimentary_revoked`), never storing secrets.
 - **Hosted Stripe surfaces only.** Sign-up uses **Stripe Checkout**; payment
   methods, invoices, cancellation, and resumption use the hosted **Stripe
   Customer Portal**. LensWise never renders a custom card form.

@@ -52,6 +52,18 @@ export interface OrgBilling {
    * a subscription does not restore trial eligibility.
    */
   trialRedeemedAt: string | null;
+  /**
+   * Platform Admin complimentary-access override. When true, the organization
+   * has permanent LensWise access regardless of Stripe status. Set only by
+   * trusted Platform Super Admin server actions; never by Stripe or the browser.
+   */
+  lifetimeComplimentary: boolean;
+  lifetimeComplimentaryGrantedAt: string | null;
+}
+
+/** Whether the organization has the Platform Admin complimentary-access override. */
+export function isComplimentary(billing: OrgBilling | null | undefined): boolean {
+  return Boolean(billing?.lifetimeComplimentary);
 }
 
 /** Whether the organization has already used its one lifetime free trial. */
@@ -68,16 +80,17 @@ export function isTrialEligible(billing: OrgBilling | null | undefined): boolean
 export type BillingAccess = "full" | "warn" | "blocked";
 
 /**
- * Access decision driven ONLY by the Stripe subscription status (no local trial
- * flags):
- *  - trialing / active → full
- *  - past_due          → warn (access with a warning banner)
- *  - everything else, including NULL (no Stripe subscription yet), canceled,
- *    unpaid, incomplete, incomplete_expired → blocked
+ * Access decision. Checked in priority order:
+ *  1. Platform Admin complimentary override → always full (works even when the
+ *     Stripe status is null, canceled, unpaid, incomplete, or expired).
+ *  2. Stripe status: trialing / active → full; past_due → warn; everything else
+ *     (NULL, canceled, unpaid, incomplete, incomplete_expired) → blocked.
  * The organization-disabled override (Platform Admin) is enforced separately in
- * the server guards and always wins.
+ * the server guards (requireActiveOrg) and always wins over this — a disabled
+ * organization is blocked regardless of complimentary access.
  */
 export function billingAccess(billing: OrgBilling | null | undefined): BillingAccess {
+  if (billing?.lifetimeComplimentary) return "full";
   const status = billing?.status ?? null;
   if (status === "trialing" || status === "active") return "full";
   if (status === "past_due") return "warn";
@@ -106,16 +119,24 @@ export function isOnTrial(billing: OrgBilling | null | undefined): boolean {
 }
 
 export interface BillingBannerData {
-  kind: "trial" | "past_due" | "cancel";
+  kind: "trial" | "past_due" | "cancel" | "info";
   message: string;
 }
 
 /**
  * The single banner to display for the current billing state, or null.
- * Priority: past_due → cancel-at-period-end → trial.
+ * Complimentary organizations never see trial/past-due/cancel WARNING banners
+ * (only a calm informational note); otherwise priority is
+ * past_due → cancel-at-period-end → trial.
  */
 export function billingBanner(billing: OrgBilling | null | undefined): BillingBannerData | null {
   if (!billing) return null;
+
+  // Complimentary access suppresses all payment/trial warnings.
+  if (billing.lifetimeComplimentary) {
+    return { kind: "info", message: "This organization has lifetime complimentary LensWise access." };
+  }
+
   const status = billing.status;
 
   if (status === "past_due") {

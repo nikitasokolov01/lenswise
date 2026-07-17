@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSuperAdmin } from "@/lib/auth/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { writeBillingAudit } from "@/lib/billing/audit";
 import { generateRegistrationKey, keyPrefix, sha256Hex } from "@/lib/server/keys";
 
 export interface GenerateKeyState {
@@ -75,4 +77,123 @@ export async function setOrganizationStatusAction(formData: FormData): Promise<v
   const supabase = createSupabaseServerClient();
   await supabase.from("organizations").update({ status }).eq("id", id);
   revalidatePath("/platform-admin");
+}
+
+// ===========================================================================
+// Complimentary access (Platform Super Admin only). Grants/revokes a permanent,
+// internal LensWise billing override on an organization WITHOUT touching Stripe.
+// The platform role is verified server-side (requireSuperAdmin) — never trusted
+// from the client — and only the complimentary columns are changed. Writes use
+// the service role; organization_billing has no client write policy, so tenants
+// can never modify these fields.
+// ===========================================================================
+
+export interface ComplimentaryActionState {
+  ok?: boolean;
+  error?: string;
+}
+
+const orgIdSchema = z.string().uuid();
+
+async function loadOrgForComplimentary(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  organizationId: string
+): Promise<{ name: string; previousStatus: string | null } | null> {
+  const { data: org } = await admin
+    .from("organizations")
+    .select("id, name")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!org) return null;
+  const { data: billing } = await admin
+    .from("organization_billing")
+    .select("subscription_status")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  return {
+    name: (org as { name: string }).name,
+    previousStatus: (billing as { subscription_status: string | null } | null)?.subscription_status ?? null,
+  };
+}
+
+/** Grant permanent complimentary access to one organization (Super Admin only). */
+export async function grantLifetimeComplimentaryAccessAction(
+  _prev: ComplimentaryActionState,
+  formData: FormData
+): Promise<ComplimentaryActionState> {
+  const ctx = await requireSuperAdmin();
+  const parsed = orgIdSchema.safeParse(String(formData.get("organizationId") ?? ""));
+  if (!parsed.success) return { error: "Invalid organization." };
+  const organizationId = parsed.data;
+
+  const admin = createSupabaseAdminClient();
+  const org = await loadOrgForComplimentary(admin, organizationId);
+  if (!org) return { error: "Organization not found." };
+
+  // Update ONLY the complimentary columns — Stripe customer/subscription/status
+  // fields are left exactly as they are.
+  const { error } = await admin.from("organization_billing").upsert(
+    {
+      organization_id: organizationId,
+      lifetime_complimentary: true,
+      lifetime_complimentary_granted_at: new Date().toISOString(),
+      lifetime_complimentary_granted_by: ctx.user.id,
+    },
+    { onConflict: "organization_id" }
+  );
+  if (error) return { error: "Could not grant complimentary access. Please try again." };
+
+  await writeBillingAudit(admin, {
+    organizationId,
+    actorId: ctx.user.id,
+    action: "billing.complimentary_granted",
+    targetType: "organization_billing",
+    targetId: organizationId,
+    metadata: { organization_name: org.name, previous_stripe_status: org.previousStatus },
+  });
+
+  revalidatePath("/platform-admin");
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Revoke complimentary access; normal Stripe rules resume immediately (Super Admin only). */
+export async function revokeLifetimeComplimentaryAccessAction(
+  _prev: ComplimentaryActionState,
+  formData: FormData
+): Promise<ComplimentaryActionState> {
+  const ctx = await requireSuperAdmin();
+  const parsed = orgIdSchema.safeParse(String(formData.get("organizationId") ?? ""));
+  if (!parsed.success) return { error: "Invalid organization." };
+  const organizationId = parsed.data;
+
+  const admin = createSupabaseAdminClient();
+  const org = await loadOrgForComplimentary(admin, organizationId);
+  if (!org) return { error: "Organization not found." };
+
+  // Clear ONLY the complimentary columns. Stripe fields (customer/subscription/
+  // status, trial_redeemed_at, etc.) are untouched, so trial history and any
+  // existing subscription state remain intact.
+  const { error } = await admin
+    .from("organization_billing")
+    .update({
+      lifetime_complimentary: false,
+      lifetime_complimentary_granted_at: null,
+      lifetime_complimentary_granted_by: null,
+    })
+    .eq("organization_id", organizationId);
+  if (error) return { error: "Could not revoke complimentary access. Please try again." };
+
+  await writeBillingAudit(admin, {
+    organizationId,
+    actorId: ctx.user.id,
+    action: "billing.complimentary_revoked",
+    targetType: "organization_billing",
+    targetId: organizationId,
+    metadata: { organization_name: org.name, previous_stripe_status: org.previousStatus },
+  });
+
+  revalidatePath("/platform-admin");
+  revalidatePath("/settings");
+  return { ok: true };
 }

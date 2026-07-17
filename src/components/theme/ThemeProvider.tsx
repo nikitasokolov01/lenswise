@@ -9,10 +9,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  parseStoredTheme,
+  resolveTheme,
+  THEME_STORAGE_KEY,
+  type Theme,
+} from "@/lib/theme/resolveTheme";
 
-export type Theme = "light" | "dark" | "system";
-
-export const THEME_STORAGE_KEY = "lenswise:theme";
+export type { Theme };
+export { THEME_STORAGE_KEY };
 
 interface ThemeContextValue {
   /** The user's chosen setting: light, dark, or follow the OS. */
@@ -32,8 +37,7 @@ function prefersDark(): boolean {
 }
 
 function resolve(theme: Theme): "light" | "dark" {
-  if (theme === "system") return prefersDark() ? "dark" : "light";
-  return theme;
+  return resolveTheme(theme, prefersDark());
 }
 
 /** Apply (or remove) the `.dark` class on <html> to swap the CSS-variable palette. */
@@ -45,12 +49,11 @@ function applyTheme(theme: Theme) {
 function readStoredTheme(): Theme {
   if (typeof window === "undefined") return "system";
   try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+    return parseStoredTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
     /* localStorage may be unavailable; fall back to system. */
+    return "system";
   }
-  return "system";
 }
 
 /**

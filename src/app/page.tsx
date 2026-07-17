@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { LENSWISE_PLAN } from "@/lib/marketing/plan";
+import { LandingThemeToggle } from "@/components/marketing/LandingThemeToggle";
 
 export const metadata: Metadata = {
   title: "LensWise — Modern Quote Management for Optical Practices",
@@ -49,7 +50,8 @@ export default async function LandingPage() {
             <a href="#features" className="hover:text-navy-900">Features</a>
             <a href="#pricing" className="hover:text-navy-900">Pricing</a>
           </nav>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <LandingThemeToggle />
             {isAuthenticated ? (
               <Link href="/app" className="inline-flex h-10 items-center rounded-full bg-navy-900 px-5 text-sm font-semibold text-white hover:bg-navy-800">
                 Open App

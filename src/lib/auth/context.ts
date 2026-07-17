@@ -79,7 +79,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     const { data: billingRow, error: billingError } = await admin
       .from("organization_billing")
       .select(
-        "subscription_status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_end, cancel_at_period_end, trial_end, billing_email, trial_redeemed_at"
+        "subscription_status, stripe_customer_id, stripe_subscription_id, stripe_price_id, current_period_end, cancel_at_period_end, trial_end, billing_email, trial_redeemed_at, lifetime_complimentary, lifetime_complimentary_granted_at"
       )
       .eq("organization_id", organization.id)
       .maybeSingle();
@@ -99,6 +99,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
         trial_end: string | null;
         billing_email: string | null;
         trial_redeemed_at: string | null;
+        lifetime_complimentary: boolean | null;
+        lifetime_complimentary_granted_at: string | null;
       };
       billing = {
         status: row.subscription_status ? normalizeStatus(row.subscription_status) : null,
@@ -110,6 +112,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
         trialEnd: row.trial_end,
         billingEmail: row.billing_email,
         trialRedeemedAt: row.trial_redeemed_at,
+        lifetimeComplimentary: Boolean(row.lifetime_complimentary),
+        lifetimeComplimentaryGrantedAt: row.lifetime_complimentary_granted_at,
       };
     }
   }
