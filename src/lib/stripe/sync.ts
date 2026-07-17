@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStripe } from "@/lib/stripe/client";
 import { writeBillingAudit } from "@/lib/billing/audit";
 import { normalizeStatus, type SubscriptionStatus } from "@/lib/billing/status";
+import { createDefaultConfiguration, SCHEMA_VERSION } from "@/lib/pricing/seedConfiguration";
 
 interface OrgCustomerInput {
   organizationId: string;
@@ -56,6 +57,62 @@ export async function getOrCreateStripeCustomer(
 
 function customerIdOf(subscription: Stripe.Subscription): string {
   return typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+}
+
+/**
+ * Public-onboarding provisioning. When a Checkout Session carries onboarding
+ * metadata (`owner_user_id` + `organization_name`), create the organization for
+ * that owner (idempotently, via the keyless RPC), attach the Stripe customer to
+ * the new billing row, and tag the customer with the org id so subsequent
+ * subscription events resolve. Returns the org id, or null when the session is
+ * not an onboarding session (e.g. an existing org resubscribing).
+ *
+ * The org is created ONLY here, after Checkout completes — never before — so a
+ * canceled/abandoned Checkout leaves no organization and redeems no trial.
+ */
+export async function provisionOrgFromCheckoutSession(
+  admin: SupabaseClient,
+  session: Stripe.Checkout.Session
+): Promise<string | null> {
+  const ownerUserId = session.metadata?.owner_user_id ?? session.client_reference_id ?? null;
+  const orgName = session.metadata?.organization_name ?? null;
+  if (!ownerUserId || !orgName) return null; // not an onboarding checkout
+
+  const ownerName = session.metadata?.owner_name ?? null;
+  const ownerEmail = session.metadata?.owner_email ?? session.customer_details?.email ?? null;
+
+  // Backfill the profile name if the trigger didn't capture it (never overwrite).
+  if (ownerName) {
+    await admin.from("profiles").update({ full_name: ownerName }).eq("id", ownerUserId).is("full_name", null);
+  }
+
+  const { data, error } = await admin.rpc("create_org_for_owner", {
+    p_user_id: ownerUserId,
+    p_org_name: orgName,
+    p_default_pricing: createDefaultConfiguration(),
+    p_schema_version: SCHEMA_VERSION,
+  });
+  if (error) {
+    console.error("[onboarding] create_org_for_owner failed:", error.message);
+    return null;
+  }
+  const organizationId = data as string;
+
+  const customerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
+  if (customerId) {
+    await admin
+      .from("organization_billing")
+      .update({ stripe_customer_id: customerId, ...(ownerEmail ? { billing_email: ownerEmail } : {}) })
+      .eq("organization_id", organizationId);
+    try {
+      await getStripe().customers.update(customerId, { metadata: { organization_id: organizationId } });
+    } catch {
+      /* best-effort customer tagging */
+    }
+  }
+
+  return organizationId;
 }
 
 /**

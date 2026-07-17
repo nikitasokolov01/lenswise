@@ -17,7 +17,7 @@ export const metadata = { title: "Subscription inactive — LensWise" };
  */
 export default async function SubscriptionInactivePage() {
   const ctx = await requireActiveOrg();
-  if (!isBillingBlocked(ctx.billing)) redirect("/");
+  if (!isBillingBlocked(ctx.billing)) redirect("/app");
 
   const canManage = isOwnerOrAdmin(ctx.role);
 

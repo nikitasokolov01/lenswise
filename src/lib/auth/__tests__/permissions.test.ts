@@ -39,18 +39,26 @@ describe("permissions", () => {
     expect(canAccess("organization_settings", admin)).toBe(true);
   });
 
-  it("public paths are limited to the auth pages; everything else is protected", () => {
+  it("public paths cover the landing + onboarding surfaces; the app stays protected", () => {
+    // Public marketing + onboarding:
+    expect(isPublicPath("/")).toBe(true);
     expect(isPublicPath("/login")).toBe(true);
-    expect(isPublicPath("/register")).toBe(true);
+    expect(isPublicPath("/start-trial")).toBe(true);
+    expect(isPublicPath("/checkout-success")).toBe(true);
+    expect(isPublicPath("/checkout-cancel")).toBe(true);
+    expect(isPublicPath("/privacy")).toBe(true);
+    expect(isPublicPath("/terms")).toBe(true);
     expect(isPublicPath("/forgot-password")).toBe(true);
     expect(isPublicPath("/reset-password")).toBe(true);
-    expect(isPublicPath("/accept-invite")).toBe(true);
-    expect(isPublicPath("/accept-invite/anything")).toBe(true);
-    // Protected:
-    expect(isPublicPath("/")).toBe(false);
+    // /register stays public for internal key-based manual onboarding.
+    expect(isPublicPath("/register")).toBe(true);
+    // Protected app routes:
+    expect(isPublicPath("/app")).toBe(false);
+    expect(isPublicPath("/settings")).toBe(false);
     expect(isPublicPath("/admin")).toBe(false);
-    expect(isPublicPath("/team")).toBe(false);
     expect(isPublicPath("/platform-admin")).toBe(false);
+    // "/" must not make every path public.
+    expect(isPublicPath("/app/anything")).toBe(false);
   });
 
   it("only Owners/Admins may import local pricing", () => {

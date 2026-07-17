@@ -14,13 +14,17 @@ other organization by database-level RLS — not by frontend checks.
 - **Roles.** Within an org: `Owner` (full access), `Admin` (manage pricing + employees),
   `Staff` (quote builder only). Platform-level: `Super Admin` — bootstrapped once from
   the server-side `SUPER_ADMIN_EMAIL`; there is **no UI to self-promote**.
-- **Registration is not public.** A new org can only be created by redeeming a
-  cryptographically secure **Registration Key** (`LW-XXXX-XXXX-XXXX-XXXX`) issued by the
-  Super Admin. Keys are stored hashed (SHA-256), shown once, and support labels,
-  expiration, max/one-time uses, revocation, and recorded redemptions.
-- **Atomic onboarding.** Redeeming a key creates the auth account, organization, owner
-  membership, org settings, and a copy of the default LensWise pricing in one
-  transaction (`redeem_key_and_create_org`); any failure rolls back.
+- **Public self-service onboarding.** The root route (`/`) is a public marketing
+  landing page. New customers click **Start Free Trial**, create an account (practice
+  name, owner name, business email, password — **no registration key**), and go straight
+  to **Stripe Checkout**. The organization is created only by the Stripe webhook after
+  Checkout completes (`create_org_for_owner`), so a canceled/abandoned Checkout leaves no
+  organization and redeems no trial. Existing customers just **Sign In**.
+- **Registration keys are internal-only.** The cryptographically secure
+  **Registration Key** infrastructure (`LW-XXXX-XXXX-XXXX-XXXX`, hashed SHA-256, labels,
+  expiration, max/one-time uses, revocation, `redeem_key_and_create_org`) is retained for
+  Platform Admin / manual onboarding. It is no longer part of the normal customer
+  experience and is not linked from the customer-facing UI.
 - **Pricing persistence.** Pricing lives in `pricing_configurations.config` (JSONB) per
   organization, using the **existing `PricingConfiguration` schema and versioned
   migrations**. The `SupabasePricingRepository` implements the same

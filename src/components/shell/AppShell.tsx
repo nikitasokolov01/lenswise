@@ -38,7 +38,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
   const ownerOrAdmin = isOwnerOrAdmin(context.role);
 
   const links: { href: string; label: string; icon: typeof Glasses; show: boolean }[] = [
-    { href: "/", label: "Quote Builder", icon: Glasses, show: Boolean(context.organizationId) },
+    { href: "/app", label: "Quote Builder", icon: Glasses, show: Boolean(context.organizationId) },
     { href: "/settings", label: "Settings", icon: Settings, show: ownerOrAdmin },
     { href: "/platform-admin", label: "Platform Admin", icon: ShieldCheck, show: context.isSuperAdmin },
   ];

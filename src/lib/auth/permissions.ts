@@ -60,17 +60,29 @@ export function canAccess(area: ProtectedArea, actor: Actor): boolean {
   }
 }
 
-/** Paths reachable without authentication. Everything else requires a session. */
+/**
+ * Paths reachable without authentication. Everything else requires a session.
+ * Includes the public marketing/onboarding surfaces. `/register` remains public
+ * for internal, key-based manual onboarding (it is no longer linked from the
+ * customer-facing UI); customers onboard via `/start-trial`.
+ */
 export const PUBLIC_PATHS = [
+  "/",
   "/login",
   "/register",
+  "/start-trial",
   "/forgot-password",
   "/reset-password",
   "/accept-invite",
+  "/checkout-success",
+  "/checkout-cancel",
+  "/privacy",
+  "/terms",
 ] as const;
 
 export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (pathname === "/") return true;
+  return PUBLIC_PATHS.some((p) => p !== "/" && (pathname === p || pathname.startsWith(`${p}/`)));
 }
 
 /** Whether the one-time LocalStorage import prompt should be offered. */

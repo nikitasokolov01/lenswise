@@ -30,7 +30,7 @@ export function LoginForm() {
       setSubmitting(false);
       return;
     }
-    router.push(params.get("redirectTo") || "/");
+    router.push(params.get("redirectTo") || "/app");
     router.refresh();
   }
 
@@ -52,12 +52,12 @@ export function LoginForm() {
         </Link>
       </div>
       <Button type="submit" size="lg" className="w-full" disabled={submitting}>
-        {submitting ? "Signing in…" : "Sign in"}
+        {submitting ? "Signing in…" : "Sign In"}
       </Button>
       <p className="text-center text-sm text-navy-500">
-        Have a registration key?{" "}
-        <Link href="/register" className="font-medium text-teal-700 hover:underline">
-          Register your office
+        New to LensWise?{" "}
+        <Link href="/start-trial" className="font-medium text-teal-700 hover:underline">
+          Start Free Trial
         </Link>
       </p>
     </form>

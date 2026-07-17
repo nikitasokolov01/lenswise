@@ -49,6 +49,11 @@ The migrations live in `supabase/migrations/`:
 - `20240601000006_remove_team.sql` — Team removed: revokes the invitation-accept
   RPC and drops the `invitations` client RLS policies (historical data and the
   `invitations` / `organization_members` tables are preserved)
+- `20240601000007_trial_once.sql` — permanent one-free-trial-per-organization
+  marker (`trial_redeemed_at`)
+- `20240601000008_public_onboarding.sql` — `create_org_for_owner`, the keyless
+  org-creation RPC used by the Stripe webhook for public self-service onboarding
+  (registration-key onboarding is retained for internal use)
 
 **Option A — Supabase CLI (recommended):**
 

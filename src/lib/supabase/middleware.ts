@@ -48,9 +48,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(url);
   }
 
-  if (user && (path === "/login" || path === "/register")) {
+  if (user && (path === "/login" || path === "/register" || path === "/start-trial")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = "/app";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

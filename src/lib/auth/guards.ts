@@ -57,7 +57,7 @@ export async function requireBilledOrg(): Promise<ActiveOrgContext> {
 export async function requireArea(area: ProtectedArea): Promise<ActiveOrgContext> {
   const ctx = await requireBilledOrg();
   if (!canAccess(area, { role: ctx.role, isSuperAdmin: ctx.isSuperAdmin })) {
-    redirect("/");
+    redirect("/app");
   }
   return ctx;
 }
@@ -70,7 +70,7 @@ export async function requireArea(area: ProtectedArea): Promise<ActiveOrgContext
 export async function requireBillingManagement(): Promise<ActiveOrgContext> {
   const ctx = await requireActiveOrg();
   if (!canAccess("billing", { role: ctx.role, isSuperAdmin: ctx.isSuperAdmin })) {
-    redirect("/");
+    redirect("/app");
   }
   return ctx;
 }
@@ -85,7 +85,7 @@ export async function requireBillingManagement(): Promise<ActiveOrgContext> {
 export async function requireSettingsAccess(): Promise<ActiveOrgContext> {
   const ctx = await requireActiveOrg();
   if (!canAccessSettings(ctx.role)) {
-    redirect("/");
+    redirect("/app");
   }
   return ctx;
 }
@@ -93,6 +93,6 @@ export async function requireSettingsAccess(): Promise<ActiveOrgContext> {
 /** Require platform Super Admin (no organization needed). */
 export async function requireSuperAdmin(): Promise<AuthContext> {
   const ctx = await requireAuthContext();
-  if (!ctx.isSuperAdmin) redirect("/");
+  if (!ctx.isSuperAdmin) redirect("/app");
   return ctx;
 }

@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe/client";
 import { getStripeWebhookSecret } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { syncSubscriptionToOrg } from "@/lib/stripe/sync";
+import { syncSubscriptionToOrg, provisionOrgFromCheckoutSession } from "@/lib/stripe/sync";
 import { writeBillingAudit, type BillingAuditAction } from "@/lib/billing/audit";
 
 // The Stripe SDK requires the Node.js runtime (crypto + raw body).
@@ -42,6 +42,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.mode === "subscription" && session.subscription) {
+          // Public onboarding: create the organization from the session metadata
+          // FIRST (idempotent), so the subscription sync below can resolve it.
+          // No-op for existing organizations resubscribing.
+          await provisionOrgFromCheckoutSession(admin, session);
           const subId = typeof session.subscription === "string" ? session.subscription : session.subscription.id;
           const subscription = await stripe.subscriptions.retrieve(subId);
           await syncAndAudit(admin, subscription, "billing.subscription_activated");
