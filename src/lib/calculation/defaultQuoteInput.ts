@@ -18,8 +18,14 @@ export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInpu
     orderType: "complete_pair",
     usage: null,
     frame: {
+      entryMode: "inventory",
+      inventoryItemId: null,
       retailPriceCents: 0,
       customDescription: "",
+      colorDescription: "",
+      sku: "",
+      upc: "",
+      sizeDescription: "",
       manualAdjustmentCents: 0,
     },
     lensTypeId: null,
@@ -38,6 +44,12 @@ export function createDefaultQuoteInput(config: PricingConfiguration): QuoteInpu
     blueLightId: null,
     surfacingOverride: null,
     prescriptionDisplayMode: "original",
+    pupillaryDistance: {
+      mode: "binocular",
+      binocular: "",
+      right: "",
+      left: "",
+    },
     prescription: null,
     insurance: {
       mode: "retail",

@@ -74,7 +74,7 @@ export function InsuranceStep({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>7. Insurance</CardTitle>
+        <CardTitle>Insurance</CardTitle>
         <CardDescription>Choose how patient responsibility should be calculated.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

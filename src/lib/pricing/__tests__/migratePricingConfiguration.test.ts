@@ -58,6 +58,8 @@ describe("migratePricingConfiguration", () => {
       coatingCoverage: { type: "copay", amountCents: 200 },
       photochromicCoverage: { type: "copay", amountCents: 300 },
       tintCoverage: { type: "retail" },
+      blueLightCoverage: { type: "retail" },
+      surfacingCoverage: { type: "retail" },
       otherCopayCents: 50,
       additionalAllowanceCents: 100,
       otherChargeCents: 0,

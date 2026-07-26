@@ -3,14 +3,34 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Printer, FileText, Copy, RotateCcw, Eye, Check } from "lucide-react";
+import { CompleteSaleDialog } from "@/components/sales/CompleteSaleDialog";
 import { formatCents } from "@/lib/money";
+import { formatSalePayment, type CompletedSale } from "@/lib/sales/types";
 import { formatUsageLabelForCustomer } from "@/lib/usageOptions";
-import type { PricingConfiguration, QuoteCalculationResult, UsageKey } from "@/lib/types";
+import type {
+  OrderType,
+  PricingConfiguration,
+  QuoteCalculationResult,
+  UsageKey,
+} from "@/lib/types";
 
 interface QuoteActionsProps {
   result: QuoteCalculationResult;
   config: PricingConfiguration;
   usage: UsageKey | null;
+  locationName: string;
+  saleKey: string;
+  canCompleteSale: boolean;
+  completeSaleDisabledReason?: string;
+  completedSale: CompletedSale | null;
+  onSaleCompleted: (sale: CompletedSale) => void;
+  orderType: OrderType;
+  frameInventoryId: string | null;
+  frameName: string;
+  frameColor: string;
+  frameSize: string;
+  frameSku: string;
+  frameImageUrl: string;
   onResetQuote: () => void;
   onOpenPatientView: () => void;
   onPrintCustomerEstimate: () => void;
@@ -26,11 +46,14 @@ interface QuoteActionsProps {
 function buildPlainTextSummary(
   result: QuoteCalculationResult,
   config: PricingConfiguration,
-  usage: UsageKey | null
+  usage: UsageKey | null,
+  locationName: string,
+  completedSale: CompletedSale | null
 ): string {
   const showExact = config.showExactTechnologyNamesOnCustomerQuotes;
   const lines: string[] = [];
   lines.push(config.officeName);
+  lines.push(locationName);
   lines.push("Eyewear Quote (Estimate)");
   const usageLabel = formatUsageLabelForCustomer(usage, showExact);
   if (usageLabel) lines.push(`Usage: ${usageLabel}`);
@@ -83,6 +106,17 @@ function buildPlainTextSummary(
     lines.push(`Discounts: -${formatCents(result.discountTotalCents)}`);
   }
   lines.push(`Patient responsibility: ${formatCents(result.patientResponsibilityCents)}`);
+  if (completedSale) {
+    lines.push(
+      `Payment recorded: ${formatSalePayment(
+        completedSale.paymentMethod,
+        completedSale.cardBrand
+      )}`
+    );
+    if (completedSale.externalReference) {
+      lines.push(`Payment reference: ${completedSale.externalReference}`);
+    }
+  }
   lines.push("");
   lines.push(config.disclaimerText);
   return lines.join("\n");
@@ -92,6 +126,19 @@ export function QuoteActions({
   result,
   config,
   usage,
+  locationName,
+  saleKey,
+  canCompleteSale,
+  completeSaleDisabledReason,
+  completedSale,
+  onSaleCompleted,
+  orderType,
+  frameInventoryId,
+  frameName,
+  frameColor,
+  frameSize,
+  frameSku,
+  frameImageUrl,
   onResetQuote,
   onOpenPatientView,
   onPrintCustomerEstimate,
@@ -100,7 +147,13 @@ export function QuoteActions({
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
-    const text = buildPlainTextSummary(result, config, usage);
+    const text = buildPlainTextSummary(
+      result,
+      config,
+      usage,
+      locationName,
+      completedSale
+    );
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -118,6 +171,21 @@ export function QuoteActions({
 
   return (
     <div className="flex flex-wrap gap-2">
+      <CompleteSaleDialog
+        saleKey={saleKey}
+        canComplete={canCompleteSale}
+        disabledReason={completeSaleDisabledReason}
+        completedSale={completedSale}
+        onCompleted={onSaleCompleted}
+        orderType={orderType}
+        patientResponsibilityCents={result.patientResponsibilityCents}
+        frameInventoryId={frameInventoryId}
+        frameName={frameName}
+        frameColor={frameColor}
+        frameSize={frameSize}
+        frameSku={frameSku}
+        frameImageUrl={frameImageUrl}
+      />
       <Button variant="secondary" size="sm" onClick={handleReset}>
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         Reset quote

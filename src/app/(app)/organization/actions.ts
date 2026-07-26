@@ -11,12 +11,41 @@ export interface OrgSettingsState {
   ok?: boolean;
 }
 
+export interface LocationActionState extends OrgSettingsState {
+  message?: string;
+}
+
 const settingsSchema = z.object({
   officeName: z.string().trim().min(1, "Office name is required."),
   contactEmail: z.string().trim().email("Enter a valid email.").or(z.literal("")),
   contactPhone: z.string().trim().max(40),
   contactAddress: z.string().trim().max(400),
 });
+
+const locationSchema = z.object({
+  name: z.string().trim().min(1, "Location name is required.").max(120),
+  contactEmail: z.string().trim().email("Enter a valid email.").or(z.literal("")),
+  contactPhone: z.string().trim().max(40),
+  contactAddress: z.string().trim().max(400),
+});
+
+const locationIdSchema = z.string().uuid();
+
+function parseLocation(formData: FormData) {
+  return locationSchema.safeParse({
+    name: formData.get("name"),
+    contactEmail: formData.get("contactEmail") ?? "",
+    contactPhone: formData.get("contactPhone") ?? "",
+    contactAddress: formData.get("contactAddress") ?? "",
+  });
+}
+
+function locationDatabaseMessage(error: { code?: string }): string {
+  if (error.code === "23505") {
+    return "An active location with that name already exists.";
+  }
+  return "The location could not be saved. Please try again.";
+}
 
 export async function updateOrganizationSettingsAction(
   _prev: OrgSettingsState,
@@ -51,6 +80,68 @@ export async function updateOrganizationSettingsAction(
 
   revalidatePath("/settings");
   return { ok: true };
+}
+
+export async function createOrganizationLocationAction(
+  _prev: LocationActionState,
+  formData: FormData
+): Promise<LocationActionState> {
+  const ctx = await requireArea("organization_settings");
+  const parsed = parseLocation(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Please check the location." };
+  }
+
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase.from("organization_locations").insert({
+    organization_id: ctx.organization.id,
+    name: parsed.data.name,
+    contact_email: parsed.data.contactEmail || null,
+    contact_phone: parsed.data.contactPhone || null,
+    contact_address: parsed.data.contactAddress || null,
+    created_by: ctx.user.id,
+    updated_by: ctx.user.id,
+  });
+
+  if (error) return { error: locationDatabaseMessage(error) };
+  revalidatePath("/", "layout");
+  revalidatePath("/settings");
+  return { ok: true, message: `${parsed.data.name} was added.` };
+}
+
+export async function updateOrganizationLocationAction(
+  _prev: LocationActionState,
+  formData: FormData
+): Promise<LocationActionState> {
+  const ctx = await requireArea("organization_settings");
+  const locationId = locationIdSchema.safeParse(formData.get("locationId"));
+  const parsed = parseLocation(formData);
+  if (!locationId.success) return { error: "Invalid location." };
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Please check the location." };
+  }
+
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("organization_locations")
+    .update({
+      name: parsed.data.name,
+      contact_email: parsed.data.contactEmail || null,
+      contact_phone: parsed.data.contactPhone || null,
+      contact_address: parsed.data.contactAddress || null,
+      updated_by: ctx.user.id,
+    })
+    .eq("id", locationId.data)
+    .eq("organization_id", ctx.organization.id)
+    .eq("is_active", true)
+    .select("id")
+    .maybeSingle();
+
+  if (error) return { error: locationDatabaseMessage(error) };
+  if (!data) return { error: "That location is no longer available." };
+  revalidatePath("/", "layout");
+  revalidatePath("/settings");
+  return { ok: true, message: "Location details updated." };
 }
 
 /**

@@ -30,3 +30,9 @@ next-env.d.ts.bak
 
 # vitest / coverage
 /coverage
+
+# licensed local catalog import retry data
+/.frames-data-cache/
+
+# licensed frame image mirror (kept locally, never committed)
+/.frame-image-mirror/

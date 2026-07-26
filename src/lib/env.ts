@@ -36,6 +36,18 @@ export function getServiceRoleKey(): string {
   return required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+/** Server-only bearer secret protecting the Frames Data batch-import endpoint. */
+export function getFramesDataImportSecret(): string {
+  if (typeof window !== "undefined") {
+    throw new Error("FRAMES_DATA_IMPORT_SECRET must never be read in the browser.");
+  }
+  const secret = required("FRAMES_DATA_IMPORT_SECRET", process.env.FRAMES_DATA_IMPORT_SECRET);
+  if (secret.length < 32) {
+    throw new Error("FRAMES_DATA_IMPORT_SECRET must be at least 32 characters.");
+  }
+  return secret;
+}
+
 /** Server-only platform Super Admin email used to bootstrap the platform role. */
 export function getSuperAdminEmail(): string | null {
   if (typeof window !== "undefined") return null;

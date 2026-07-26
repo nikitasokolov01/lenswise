@@ -7,6 +7,7 @@ import type {
   InsuranceCoverageInput,
   InsuranceMode,
   OrderType,
+  PupillaryDistanceMode,
   PrescriptionDisplayMode,
   PrescriptionInput,
   PricingConfiguration,
@@ -15,6 +16,11 @@ import type {
   UsageKey,
 } from "@/lib/types";
 import { createDefaultQuoteInput } from "@/lib/calculation/defaultQuoteInput";
+import {
+  formatQuoteFrameProductName,
+  formatQuoteFrameSize,
+  type QuoteFrameInventoryOption,
+} from "@/lib/inventory/types";
 
 /** The plain-dollar-amount fields on InsuranceCoverageInput (allowances, other copay/charge) — everything except the CoverageMethod category fields and the note. */
 type InsuranceCoverageMoneyField = Exclude<
@@ -71,6 +77,8 @@ export type QuoteAction =
   | { type: "SET_ORDER_TYPE"; orderType: OrderType }
   | { type: "SET_USAGE"; usage: UsageKey | null }
   | { type: "SET_FRAME"; field: keyof FrameSelection; value: FrameSelection[keyof FrameSelection] }
+  | { type: "SET_FRAME_ENTRY_MODE"; mode: FrameSelection["entryMode"] }
+  | { type: "SELECT_INVENTORY_FRAME"; frame: QuoteFrameInventoryOption }
   | { type: "SET_LENS_TYPE"; lensTypeId: string | null; isProgressive: boolean }
   | { type: "SET_PROGRESSIVE_DESIGN"; progressiveDesignId: string | null }
   | { type: "SET_MATERIAL"; materialId: string | null }
@@ -84,6 +92,8 @@ export type QuoteAction =
   | { type: "SET_BLUE_LIGHT"; blueLightId: string | null }
   | { type: "SET_SURFACING_OVERRIDE"; enabled: boolean | null }
   | { type: "SET_PRESCRIPTION_DISPLAY_MODE"; mode: PrescriptionDisplayMode }
+  | { type: "SET_PUPILLARY_DISTANCE_MODE"; mode: PupillaryDistanceMode }
+  | { type: "SET_PUPILLARY_DISTANCE_VALUE"; field: "binocular" | "right" | "left"; value: string }
   | { type: "APPLY_PRESCRIPTION"; prescription: PrescriptionInput }
   | { type: "CLEAR_PRESCRIPTION" }
   | { type: "SET_INSURANCE_MODE"; mode: InsuranceMode }
@@ -134,6 +144,50 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
       const next: FrameSelection = { ...state.frame, [action.field]: action.value };
       return { ...state, frame: next };
     }
+    case "SET_FRAME_ENTRY_MODE": {
+      if (action.mode === state.frame.entryMode) return state;
+
+      if (action.mode === "manual") {
+        return {
+          ...state,
+          frame: {
+            ...state.frame,
+            entryMode: "manual",
+            inventoryItemId: null,
+          },
+        };
+      }
+
+      return {
+        ...state,
+        frame: {
+          ...state.frame,
+          entryMode: "inventory",
+          inventoryItemId: null,
+          retailPriceCents: 0,
+          customDescription: "",
+          colorDescription: "",
+          sku: "",
+          upc: "",
+          sizeDescription: "",
+        },
+      };
+    }
+    case "SELECT_INVENTORY_FRAME":
+      return {
+        ...state,
+        frame: {
+          ...state.frame,
+          entryMode: "inventory",
+          inventoryItemId: action.frame.id,
+          retailPriceCents: action.frame.retailPriceCents,
+          customDescription: formatQuoteFrameProductName(action.frame),
+          colorDescription: action.frame.color,
+          sku: action.frame.sku ?? "",
+          upc: action.frame.upc ?? "",
+          sizeDescription: formatQuoteFrameSize(action.frame),
+        },
+      };
     case "SET_LENS_TYPE": {
       return {
         ...state,
@@ -191,6 +245,19 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
     case "SET_PRESCRIPTION_DISPLAY_MODE":
       // Display-only: never touches the applied `prescription`.
       return { ...state, prescriptionDisplayMode: action.mode };
+    case "SET_PUPILLARY_DISTANCE_MODE":
+      // Preserve both styles while toggling so an accidental tap does not
+      // discard a measurement. Only the active style is printed.
+      return {
+        ...state,
+        pupillaryDistance: { ...state.pupillaryDistance, mode: action.mode },
+      };
+    case "SET_PUPILLARY_DISTANCE_VALUE":
+      // Office-only order notation; it never affects pricing or the applied prescription.
+      return {
+        ...state,
+        pupillaryDistance: { ...state.pupillaryDistance, [action.field]: action.value },
+      };
     case "APPLY_PRESCRIPTION":
       // Committing a validated prescription is the ONLY way it ever enters
       // quote state — see PrescriptionStep.tsx, which keeps in-progress

@@ -2,6 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RadioCard, RadioCardGroup } from "@/components/ui/radio-card";
+import { IllustratedOptionCard } from "@/components/quote/IllustratedOptionCard";
+import { LensIllustration } from "@/components/quote/LensIllustration";
 import type { Dispatch } from "react";
 import type { LensTypeConfig, ProgressiveDesignConfig, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
@@ -36,7 +38,7 @@ export function LensTypeStep({
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>3. Lens Type</CardTitle>
+        <CardTitle>Choose a lens type</CardTitle>
         <CardDescription>
           {disabled
             ? disabledReason
@@ -45,19 +47,20 @@ export function LensTypeStep({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <RadioCardGroup legend="Lens type">
+        <div role="radiogroup" aria-label="Lens type" className="grid gap-3">
           {active.map((lensType) => (
-            <RadioCard
+            <IllustratedOptionCard
               key={lensType.id}
               name="lens-type"
               title={lensType.name}
-              subtitle={lensType.description}
+              description={lensType.description}
               checked={input.lensTypeId === lensType.id}
               disabled={disabled}
               onChange={() => selectLensType(lensType)}
+              illustration={<LensIllustration kind={lensType.key} />}
             />
           ))}
-        </RadioCardGroup>
+        </div>
 
         {isProgressive ? (
           <div>

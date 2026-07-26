@@ -50,7 +50,7 @@ export function PhotochromicStep({
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>6. Photochromic</CardTitle>
+        <CardTitle>Photochromic</CardTitle>
         <CardDescription>{disabled ? disabledReason : "Choose a light-adaptive lens option."}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -22,7 +22,7 @@ export function CoatingStep({ input, dispatch, coatings, lensType, disabled, dis
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>5. Anti-Reflective Coating</CardTitle>
+        <CardTitle>Anti-Reflective Coating</CardTitle>
         <CardDescription>{disabled ? disabledReason : "Choose an anti-reflective coating."}</CardDescription>
       </CardHeader>
       <CardContent>

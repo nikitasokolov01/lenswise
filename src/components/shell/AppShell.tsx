@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { Glasses, Settings, ShieldCheck } from "lucide-react";
+import { Boxes, Glasses, ReceiptText, Settings, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingRepositoryProvider } from "@/lib/pricing/repositoryContext";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import { ThemeAccountSync, type Theme } from "@/components/theme/ThemeProvider";
 import { BillingBanner } from "@/components/billing/BillingBanner";
+import { LocationSwitcher } from "@/components/shell/LocationSwitcher";
+import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
 import { billingBanner, type OrgBilling } from "@/lib/billing/status";
+import type { OrganizationLocation } from "@/lib/locations/types";
 
 export interface ShellContext {
   userId: string;
@@ -18,6 +21,8 @@ export interface ShellContext {
   fullName: string | null;
   organizationId: string | null;
   organizationName: string | null;
+  locations: OrganizationLocation[];
+  activeLocation: OrganizationLocation | null;
   role: OrgRole | null;
   isSuperAdmin: boolean;
   themePreference: Theme;
@@ -25,6 +30,7 @@ export interface ShellContext {
   billing: OrgBilling | null;
   /** Suppressed inside Platform Admin so Super Admin sees no billing banner. */
   showBillingBanner: boolean;
+  showWhatsNew: boolean;
 }
 
 /**
@@ -39,6 +45,8 @@ export function AppShell({ context, children }: { context: ShellContext; childre
 
   const links: { href: string; label: string; icon: typeof Glasses; show: boolean }[] = [
     { href: "/app", label: "Quote Builder", icon: Glasses, show: Boolean(context.organizationId) },
+    { href: "/inventory", label: "Frame Inventory", icon: Boxes, show: Boolean(context.organizationId) },
+    { href: "/sales", label: "Sales", icon: ReceiptText, show: Boolean(context.organizationId) },
     { href: "/settings", label: "Settings", icon: Settings, show: ownerOrAdmin },
     { href: "/platform-admin", label: "Platform Admin", icon: ShieldCheck, show: context.isSuperAdmin },
   ];
@@ -48,6 +56,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
   const shell = (
     <div className="min-h-screen">
       <ThemeAccountSync accountTheme={context.themePreference} />
+      <WhatsNewDialog initiallyOpen={context.showWhatsNew} />
       {banner ? <BillingBanner banner={banner} canManage={ownerOrAdmin} /> : null}
       <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-white pt-safe-top">
         <div className="mx-auto flex max-w-6xl items-center gap-1 px-4 sm:px-6 lg:px-8">
@@ -55,6 +64,13 @@ export function AppShell({ context, children }: { context: ShellContext; childre
             <span className="text-sm font-bold tracking-tight text-navy-900">LensWise</span>
             <span className="hidden text-xs text-navy-400 sm:inline">Optical Quote Builder</span>
           </span>
+
+          {context.activeLocation ? (
+            <LocationSwitcher
+              locations={context.locations}
+              activeLocationId={context.activeLocation.id}
+            />
+          ) : null}
 
           <div className="flex flex-1 items-center gap-1 overflow-x-auto">
             {links

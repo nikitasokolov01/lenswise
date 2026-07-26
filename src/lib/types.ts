@@ -349,9 +349,17 @@ export interface PricingConfiguration {
 /* Quote input (the optician's in-progress selections for one patient visit) */
 /* -------------------------------------------------------------------------- */
 
+export type FrameEntryMode = "inventory" | "manual";
+
 export interface FrameSelection {
+  entryMode: FrameEntryMode;
+  inventoryItemId: string | null;
   retailPriceCents: Money;
   customDescription: string;
+  colorDescription: string;
+  sku: string;
+  upc: string;
+  sizeDescription: string;
   manualAdjustmentCents: Money;
 }
 
@@ -390,6 +398,18 @@ export interface PrescriptionEyeValues {
 export interface PrescriptionInput {
   od: PrescriptionEyeValues;
   os: PrescriptionEyeValues;
+}
+
+export type PupillaryDistanceMode = "binocular" | "monocular";
+
+export interface PupillaryDistanceInput {
+  mode: PupillaryDistanceMode;
+  /** One combined PD measurement in millimeters. */
+  binocular: string;
+  /** Right-eye monocular PD in millimeters. */
+  right: string;
+  /** Left-eye monocular PD in millimeters. */
+  left: string;
 }
 
 /**
@@ -459,6 +479,8 @@ export interface QuoteInput {
   surfacingOverride: boolean | null;
   /** How the Internal Worksheet displays the applied prescription (never modifies it). */
   prescriptionDisplayMode: PrescriptionDisplayMode;
+  /** Office-only one-number or two-number PD entry. Informational only and never persisted. */
+  pupillaryDistance: PupillaryDistanceInput;
   /**
    * The APPLIED prescription only — never a work-in-progress draft. `null`
    * means no valid prescription has been applied yet. Required (non-null)

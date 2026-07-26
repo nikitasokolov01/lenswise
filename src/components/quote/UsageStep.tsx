@@ -2,7 +2,8 @@
 
 import type { Dispatch } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { RadioCard, RadioCardGroup } from "@/components/ui/radio-card";
+import { IllustratedOptionCard } from "@/components/quote/IllustratedOptionCard";
+import { LensIllustration } from "@/components/quote/LensIllustration";
 import { USAGE_OPTIONS } from "@/lib/usageOptions";
 import type { QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
@@ -24,27 +25,30 @@ export function UsageStep({ input, dispatch }: UsageStepProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Usage</CardTitle>
-        <CardDescription>What are these glasses primarily for? Optional — choose one.</CardDescription>
+        <CardTitle>How will these glasses be used?</CardTitle>
+        <CardDescription>
+          Choose the patient&apos;s primary visual task. This keeps the worksheet clear and does not change pricing.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <RadioCardGroup legend="Usage" className="grid-cols-2 sm:grid-cols-3">
+        <div role="radiogroup" aria-label="Usage" className="grid gap-3">
           {USAGE_OPTIONS.map((option) => (
-            <RadioCard
+            <IllustratedOptionCard
               key={option.key}
               name="usage"
               title={option.label}
-              subtitle={option.description}
+              description={option.description}
               value={option.key}
               checked={usage === option.key}
               onChange={() => dispatch({ type: "SET_USAGE", usage: option.key })}
+              illustration={<LensIllustration kind={option.key} />}
             />
           ))}
-        </RadioCardGroup>
+        </div>
         {usage ? (
           <button
             type="button"
-            className="mt-2.5 text-xs font-medium text-teal-700 hover:underline"
+            className="mt-3 text-xs font-medium text-teal-700 hover:underline"
             onClick={() => dispatch({ type: "SET_USAGE", usage: null })}
           >
             Clear usage

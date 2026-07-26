@@ -2,6 +2,9 @@ import { formatCents } from "@/lib/money";
 import { formatPrescriptionSummaryLines } from "@/lib/prescriptionOptions";
 import { derivePrescriptionForDisplay } from "@/lib/prescriptionDisplay";
 import { formatUsageLabel } from "@/lib/usageOptions";
+import { formatPupillaryDistance } from "@/lib/pupillaryDistance";
+import type { OrganizationLocation } from "@/lib/locations/types";
+import { formatSalePayment, type CompletedSale } from "@/lib/sales/types";
 import type { CoverageMethod, PricingConfiguration, QuoteCalculationResult, QuoteInput } from "@/lib/types";
 
 /** Renders a CoverageMethod as a short staff-facing label, e.g. "Copay $25.00", "Covered", or "Retail". */
@@ -15,6 +18,8 @@ interface InternalOrderWorksheetPrintProps {
   input: QuoteInput;
   result: QuoteCalculationResult;
   config: PricingConfiguration;
+  location: OrganizationLocation;
+  completedSale?: CompletedSale | null;
 }
 
 /**
@@ -27,7 +32,13 @@ interface InternalOrderWorksheetPrintProps {
  * InternalOrderWorksheetPrint is ever mounted with `print:block` at a
  * time — see QuoteBuilder.tsx.
  */
-export function InternalOrderWorksheetPrint({ input, result, config }: InternalOrderWorksheetPrintProps) {
+export function InternalOrderWorksheetPrint({
+  input,
+  result,
+  config,
+  location,
+  completedSale,
+}: InternalOrderWorksheetPrintProps) {
   const now = new Date();
   const lensType = input.lensTypeId ? config.lensTypes.find((lt) => lt.id === input.lensTypeId) : undefined;
   const progressiveDesign = input.progressiveDesignId
@@ -45,6 +56,7 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
   const priceableItems = result.lineItems.filter((li) => li.category !== "discount");
   const discountItems = result.lineItems.filter((li) => li.category === "discount");
   const coverage = input.insurance.coverage;
+  const frameIncluded = input.orderType !== "lens_only";
 
   // Exact (staff-facing) usage label (informational only), and the single
   // display-only prescription for the selected display mode. The applied
@@ -71,7 +83,14 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
   return (
     <div className="internal-print hidden print:block print:p-2 print:text-[11px] print:leading-tight print:text-black" aria-hidden="true">
       <div className="flex items-baseline justify-between border-b-2 border-black pb-2">
-        <h1 className="text-2xl font-bold">{config.officeName}</h1>
+        <div>
+          <h1 className="text-2xl font-bold">{config.officeName}</h1>
+          <p className="text-sm font-semibold">{location.name}</p>
+          {location.contactAddress ? (
+            <p className="whitespace-pre-line text-xs">{location.contactAddress}</p>
+          ) : null}
+          {location.contactPhone ? <p className="text-xs">{location.contactPhone}</p> : null}
+        </div>
         <p className="text-sm">
           {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </p>
@@ -85,8 +104,23 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         <table className="mt-1 w-full border-collapse text-sm">
           <tbody>
             <Row label="Usage" value={usageLabel ?? "—"} />
-            <Row label="Frame" value={input.frame.customDescription || "—"} />
-            <Row label="Frame retail price" value={formatCents(input.frame.retailPriceCents)} />
+            <Row
+              label="Frame name"
+              value={frameIncluded ? input.frame.customDescription || "—" : "Patient-owned / no frame sold"}
+            />
+            {frameIncluded ? (
+              <>
+                <Row label="Frame color" value={input.frame.colorDescription || "—"} />
+                <Row
+                  label="Frame source"
+                  value={input.frame.entryMode === "inventory" ? "Office inventory" : "Manual entry"}
+                />
+                {input.frame.sku ? <Row label="Frame SKU" value={input.frame.sku} /> : null}
+                {input.frame.upc ? <Row label="Frame UPC" value={input.frame.upc} /> : null}
+                <Row label="Frame measurements" value={input.frame.sizeDescription || "—"} />
+                <Row label="Frame retail price" value={formatCents(input.frame.retailPriceCents)} />
+              </>
+            ) : null}
             <Row label="Lens type" value={lensType?.name ?? "—"} />
             {progressiveDesign ? <Row label="Progressive design" value={progressiveDesign.name} /> : null}
             <Row label="Material" value={material?.name ?? "—"} />
@@ -131,6 +165,14 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
           <pre className="mt-1 whitespace-pre-wrap font-mono text-sm leading-6">
             {formatPrescriptionSummaryLines(rxDisplay.prescription).join("\n")}
           </pre>
+          <table className="mt-1 w-full border-collapse text-sm">
+            <tbody>
+              <Row
+                label="Pupillary distance (PD), mm"
+                value={formatPupillaryDistance(input.pupillaryDistance) || "—"}
+              />
+            </tbody>
+          </table>
         </section>
       ) : null}
 
@@ -235,6 +277,28 @@ export function InternalOrderWorksheetPrint({ input, result, config }: InternalO
         <p className="text-sm font-semibold uppercase">Patient Responsibility</p>
         <p className="text-3xl font-bold print:text-2xl">{formatCents(result.patientResponsibilityCents)}</p>
       </div>
+
+      {completedSale ? (
+        <section className="mt-2 border-2 border-black p-2 print:mt-1 print:p-1">
+          <h3 className="text-sm font-semibold uppercase">Payment recorded</h3>
+          <table className="mt-1 w-full border-collapse text-sm">
+            <tbody>
+              <Row
+                label="Payment method"
+                value={formatSalePayment(completedSale.paymentMethod, completedSale.cardBrand)}
+              />
+              {completedSale.externalReference ? (
+                <Row label="POS receipt / reference" value={completedSale.externalReference} />
+              ) : null}
+              {completedSale.note ? <Row label="Payment note" value={completedSale.note} /> : null}
+              <Row
+                label="Recorded"
+                value={new Date(completedSale.completedAt).toLocaleString()}
+              />
+            </tbody>
+          </table>
+        </section>
+      ) : null}
       
       <div className="internal-print hidden print:block print:p-2 print:text-[15px] print:leading-tight print:text-black" aria-hidden="true"></div>
       {result.warnings.length > 0 ? (

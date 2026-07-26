@@ -12,11 +12,14 @@ export default async function PlatformAdminLayout({ children }: { children: Reac
         fullName: ctx.fullName,
         organizationId: ctx.organization?.id ?? null,
         organizationName: ctx.organization?.name ?? null,
+        locations: [],
+        activeLocation: null,
         role: ctx.role,
         isSuperAdmin: ctx.isSuperAdmin,
         themePreference: ctx.themePreference,
         billing: ctx.billing,
         showBillingBanner: false,
+        showWhatsNew: false,
       }}
     >
       {children}

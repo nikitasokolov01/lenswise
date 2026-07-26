@@ -1,11 +1,15 @@
 import { formatCents } from "@/lib/money";
 import { formatUsageLabelForCustomer } from "@/lib/usageOptions";
+import type { OrganizationLocation } from "@/lib/locations/types";
+import { formatSalePayment, type CompletedSale } from "@/lib/sales/types";
 import type { InsuranceBreakdown, PricingConfiguration, QuoteCalculationResult, UsageKey } from "@/lib/types";
 
 interface CustomerEstimatePrintProps {
   result: QuoteCalculationResult;
   config: PricingConfiguration;
   usage: UsageKey | null;
+  location: OrganizationLocation;
+  completedSale?: CompletedSale | null;
 }
 
 /** Patient-owed copay/charge lines from the breakdown (non-zero only). */
@@ -47,7 +51,13 @@ function customerInsuranceLines(b: InsuranceBreakdown): Array<{ label: string; c
  * chrome, or app UI. Only one of CustomerEstimatePrint / InternalOrderWorksheetPrint
  * is ever mounted with `print:block` at a time — see QuoteBuilder.tsx.
  */
-export function CustomerEstimatePrint({ result, config, usage }: CustomerEstimatePrintProps) {
+export function CustomerEstimatePrint({
+  result,
+  config,
+  usage,
+  location,
+  completedSale,
+}: CustomerEstimatePrintProps) {
   const now = new Date();
   const priceableItems = result.lineItems.filter((li) => li.category !== "discount");
   const discountItems = result.lineItems.filter((li) => li.category === "discount");
@@ -61,7 +71,14 @@ export function CustomerEstimatePrint({ result, config, usage }: CustomerEstimat
   return (
     <div className="hidden print:block print:p-8 print:text-black" aria-hidden="true">
       <div className="flex items-baseline justify-between border-b-2 border-black pb-2">
-        <h1 className="text-2xl font-bold">{config.officeName}</h1>
+        <div>
+          <h1 className="text-2xl font-bold">{config.officeName}</h1>
+          <p className="text-sm font-semibold">{location.name}</p>
+          {location.contactAddress ? (
+            <p className="whitespace-pre-line text-xs">{location.contactAddress}</p>
+          ) : null}
+          {location.contactPhone ? <p className="text-xs">{location.contactPhone}</p> : null}
+        </div>
         <p className="text-sm">
           {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </p>
@@ -134,6 +151,16 @@ export function CustomerEstimatePrint({ result, config, usage }: CustomerEstimat
         <p className="text-sm font-semibold uppercase">Patient Responsibility</p>
         <p className="text-3xl font-bold">{formatCents(result.patientResponsibilityCents)}</p>
       </div>
+
+      {completedSale ? (
+        <div className="mt-3 rounded border border-gray-400 p-3 text-sm">
+          <p className="font-semibold">Payment recorded</p>
+          <p>{formatSalePayment(completedSale.paymentMethod, completedSale.cardBrand)}</p>
+          {completedSale.externalReference ? (
+            <p>Reference: {completedSale.externalReference}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <p className="mt-4 text-xs">{config.disclaimerText}</p>
     </div>

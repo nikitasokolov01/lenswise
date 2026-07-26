@@ -48,6 +48,7 @@ interface QuoteSummaryProps {
   config: PricingConfiguration;
   mode: InsuranceMode;
   usage: UsageKey | null;
+  locationName: string;
   className?: string;
 }
 
@@ -57,7 +58,14 @@ const MODE_LABEL: Record<InsuranceMode, string> = {
   manual: "Manual Final Price Override",
 };
 
-export function QuoteSummary({ result, config, mode, usage, className }: QuoteSummaryProps) {
+export function QuoteSummary({
+  result,
+  config,
+  mode,
+  usage,
+  locationName,
+  className,
+}: QuoteSummaryProps) {
   const usageLabel = formatUsageLabel(usage);
   const {
     lineItems,
@@ -80,7 +88,9 @@ export function QuoteSummary({ result, config, mode, usage, className }: QuoteSu
     <Card className={className} id="quote-summary">
       <CardHeader>
         <CardTitle>Quote Summary</CardTitle>
-        <p className="text-sm text-navy-500">{config.officeName}</p>
+        <p className="text-sm text-navy-500">
+          {config.officeName} · {locationName}
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {usageLabel ? (

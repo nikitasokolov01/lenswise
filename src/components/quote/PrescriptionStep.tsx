@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   SPHERE_OPTIONS,
   CYLINDER_OPTIONS,
@@ -15,6 +16,7 @@ import {
   formatPrescriptionSummaryLines,
 } from "@/lib/prescriptionOptions";
 import { prescriptionDisplayLabel, prescriptionHasAdd, toggledDisplayMode } from "@/lib/prescriptionDisplay";
+import { sanitizePupillaryDistanceValue, type PupillaryDistanceField } from "@/lib/pupillaryDistance";
 import type { PrescriptionEyeValues, PrescriptionInput, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
@@ -99,16 +101,111 @@ export function PrescriptionStep({ input, dispatch }: PrescriptionStepProps) {
     dispatch({ type: "CLEAR_PRESCRIPTION" });
   }
 
+  function updatePupillaryDistance(field: PupillaryDistanceField, value: string) {
+    dispatch({
+      type: "SET_PUPILLARY_DISTANCE_VALUE",
+      field,
+      value: sanitizePupillaryDistanceValue(value),
+    });
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>2. Prescription</CardTitle>
+        <CardTitle>Prescription details</CardTitle>
         <CardDescription>
           Required to configure lenses for this order. Used only to calculate this quote — never saved or
           transmitted.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-lg border border-navy-100 bg-navy-50/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-navy-700">Pupillary distance (PD)</p>
+              <p className="mt-0.5 text-xs text-navy-500">Choose how the prescription lists the measurement.</p>
+            </div>
+            <div
+              className="inline-flex rounded-lg border border-navy-200 bg-white p-1"
+              role="group"
+              aria-label="Pupillary distance format"
+            >
+              <Button
+                size="sm"
+                variant={input.pupillaryDistance.mode === "binocular" ? "accent" : "ghost"}
+                className="h-8 px-3"
+                aria-pressed={input.pupillaryDistance.mode === "binocular"}
+                onClick={() => dispatch({ type: "SET_PUPILLARY_DISTANCE_MODE", mode: "binocular" })}
+              >
+                One number
+              </Button>
+              <Button
+                size="sm"
+                variant={input.pupillaryDistance.mode === "monocular" ? "accent" : "ghost"}
+                className="h-8 px-3"
+                aria-pressed={input.pupillaryDistance.mode === "monocular"}
+                onClick={() => dispatch({ type: "SET_PUPILLARY_DISTANCE_MODE", mode: "monocular" })}
+              >
+                Two numbers
+              </Button>
+            </div>
+          </div>
+
+          {input.pupillaryDistance.mode === "binocular" ? (
+            <div className="mt-3 max-w-[180px]">
+              <Label htmlFor="pd-binocular" className="text-xs">
+                PD (mm)
+              </Label>
+              <Input
+                id="pd-binocular"
+                value={input.pupillaryDistance.binocular}
+                onChange={(event) => updatePupillaryDistance("binocular", event.target.value)}
+                placeholder="63"
+                inputMode="decimal"
+                maxLength={4}
+                autoComplete="off"
+                aria-describedby="pupillary-distance-help"
+              />
+            </div>
+          ) : (
+            <div className="mt-3 grid max-w-sm grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="pd-right" className="text-xs">
+                  OD / Right
+                </Label>
+                <Input
+                  id="pd-right"
+                  value={input.pupillaryDistance.right}
+                  onChange={(event) => updatePupillaryDistance("right", event.target.value)}
+                  placeholder="31.5"
+                  inputMode="decimal"
+                  maxLength={4}
+                  autoComplete="off"
+                  aria-describedby="pupillary-distance-help"
+                />
+              </div>
+              <div>
+                <Label htmlFor="pd-left" className="text-xs">
+                  OS / Left
+                </Label>
+                <Input
+                  id="pd-left"
+                  value={input.pupillaryDistance.left}
+                  onChange={(event) => updatePupillaryDistance("left", event.target.value)}
+                  placeholder="31.5"
+                  inputMode="decimal"
+                  maxLength={4}
+                  autoComplete="off"
+                  aria-describedby="pupillary-distance-help"
+                />
+              </div>
+            </div>
+          )}
+          <p id="pupillary-distance-help" className="mt-1.5 text-xs text-navy-500">
+            Up to two digits plus one decimal. This appears only on the Internal Worksheet.
+          </p>
+        </div>
+
         {isEditing ? (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

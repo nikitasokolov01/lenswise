@@ -1,7 +1,8 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { RadioCard, RadioCardGroup } from "@/components/ui/radio-card";
+import { IllustratedOptionCard } from "@/components/quote/IllustratedOptionCard";
+import { LensIllustration, type LensIllustrationKind } from "@/components/quote/LensIllustration";
 import { formatCents } from "@/lib/money";
 import { findMaterialPrice } from "@/lib/calculation/materialPricing";
 import type { Dispatch } from "react";
@@ -26,7 +27,7 @@ export function MaterialStep({ input, dispatch, materials, lensType, disabled, d
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle>4. Lens Material</CardTitle>
+        <CardTitle>Select a lens material</CardTitle>
         <CardDescription>
           {disabled
             ? disabledReason
@@ -38,26 +39,33 @@ export function MaterialStep({ input, dispatch, materials, lensType, disabled, d
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <RadioCardGroup legend="Lens material">
+        <div role="radiogroup" aria-label="Lens material" className="grid gap-3">
           {active.map((material) => {
             const matchedPrice = lensType
               ? findMaterialPrice(material, lensType, input.progressiveDesignId)
               : undefined;
             const priceLabel = !lensType || needsDesignFirst ? "—" : matchedPrice ? formatCents(matchedPrice.priceCents) : "Not priced";
+            const illustrationKind: LensIllustrationKind = material.isHighIndex
+              ? "thin_material"
+              : material.appliesToHighCylinderSurfacing
+                ? "performance_material"
+                : "standard_material";
             return (
-              <RadioCard
+              <IllustratedOptionCard
                 key={material.id}
                 name="material"
                 title={material.name}
-                subtitle={material.shortDescription}
+                description={material.shortDescription}
                 priceLabel={priceLabel}
+                badge={material.isHighIndex ? "Thin & light" : undefined}
                 checked={input.materialId === material.id}
                 disabled={stepDisabled || !matchedPrice}
                 onChange={() => dispatch({ type: "SET_MATERIAL", materialId: material.id })}
+                illustration={<LensIllustration kind={illustrationKind} />}
               />
             );
           })}
-        </RadioCardGroup>
+        </div>
       </CardContent>
     </Card>
   );

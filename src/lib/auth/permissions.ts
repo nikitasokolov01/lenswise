@@ -16,6 +16,7 @@ export type ProtectedArea =
   | "registration_keys"
   | "organization_status"
   | "pricing_update"
+  | "inventory_manage"
   | "billing";
 
 export interface Actor {
@@ -51,6 +52,7 @@ export function canAccess(area: ProtectedArea, actor: Actor): boolean {
       return actor.isSuperAdmin;
     case "admin_pricing":
     case "pricing_update":
+    case "inventory_manage":
     case "organization_settings":
       return canEditPricing(actor.role) || actor.isSuperAdmin;
     case "billing":

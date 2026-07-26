@@ -34,6 +34,8 @@ describe("permissions", () => {
     expect(canAccess("admin_pricing", staff)).toBe(false);
     expect(canAccess("admin_pricing", admin)).toBe(true);
     expect(canAccess("pricing_update", staff)).toBe(false);
+    expect(canAccess("inventory_manage", staff)).toBe(false);
+    expect(canAccess("inventory_manage", admin)).toBe(true);
     expect(canAccess("billing", staff)).toBe(false);
     expect(canAccess("billing", admin)).toBe(true);
     expect(canAccess("organization_settings", admin)).toBe(true);

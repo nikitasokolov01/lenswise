@@ -28,7 +28,7 @@ export function OrgSettingsForm({
       {state.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p> : null}
       {state.ok ? <p className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">Saved.</p> : null}
       <div>
-        <Label htmlFor="officeName">Office name</Label>
+        <Label htmlFor="officeName">Company or practice name</Label>
         <Input id="officeName" name="officeName" defaultValue={defaults.officeName} required />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -42,7 +42,7 @@ export function OrgSettingsForm({
         </div>
       </div>
       <div>
-        <Label htmlFor="contactAddress">Address (shown on printouts)</Label>
+        <Label htmlFor="contactAddress">Main company address</Label>
         <Textarea id="contactAddress" name="contactAddress" rows={3} defaultValue={defaults.contactAddress} />
       </div>
       <SaveButton />
