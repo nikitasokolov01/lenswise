@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   useEffect,
   useId,
@@ -246,21 +245,6 @@ function FrameCard({ frame, canManage }: { frame: FrameInventoryItem; canManage:
     <Card className={!frame.isActive ? "opacity-70" : undefined}>
       <CardContent className="p-0">
         <div className="flex gap-4 p-4">
-          <div className="flex h-20 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-navy-50 p-1 text-teal-700 ring-1 ring-navy-100">
-            {frame.imageUrl ? (
-              <Image
-                src={frame.imageUrl}
-                unoptimized
-                width={160}
-                height={96}
-                sizes="112px"
-                className="h-full w-full object-contain"
-                alt={`${frame.brand} ${frame.model} in ${frame.color}`}
-              />
-            ) : (
-              <Glasses className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
-            )}
-          </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">

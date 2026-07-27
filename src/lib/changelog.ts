@@ -19,7 +19,7 @@ export const CURRENT_CHANGELOG = {
     {
       title: "Frame catalog and inventory",
       description:
-        "Browse frame images by brand, choose exact color and size variants, add several at once, and manage pricing, stock alerts, archive, or delete.",
+        "Browse frames by brand, choose exact color and size variants, add several at once, and manage pricing, stock alerts, archive, or delete.",
     },
     {
       title: "Multiple office locations",
@@ -33,4 +33,3 @@ export const CURRENT_CHANGELOG = {
     },
   ],
 } as const;
-
