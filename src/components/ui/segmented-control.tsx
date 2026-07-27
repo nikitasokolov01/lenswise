@@ -30,7 +30,7 @@ export function SegmentedControl<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className={cn("inline-flex rounded-md border border-navy-200 bg-navy-50 p-1", className)}
+      className={cn("inline-flex rounded-xl border border-navy-200 bg-navy-50 p-1", className)}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -41,7 +41,7 @@ export function SegmentedControl<T extends string>({
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              "min-h-[36px] rounded px-3 text-sm font-medium transition-colors",
+              "min-h-[36px] rounded-lg px-3 text-sm font-semibold transition-colors",
               selected
                 ? "bg-white text-navy-900 shadow-soft border border-navy-200"
                 : "text-navy-500 hover:text-navy-700"

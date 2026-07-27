@@ -44,6 +44,9 @@ describe("permissions", () => {
   it("public paths cover the landing + onboarding surfaces; the app stays protected", () => {
     // Public marketing + onboarding:
     expect(isPublicPath("/")).toBe(true);
+    expect(isPublicPath("/landing-preview")).toBe(true);
+    expect(isPublicPath("/landing-hive-preview")).toBe(false);
+    expect(isPublicPath("/landing-apple-preview")).toBe(false);
     expect(isPublicPath("/login")).toBe(true);
     expect(isPublicPath("/start-trial")).toBe(true);
     expect(isPublicPath("/checkout-success")).toBe(true);

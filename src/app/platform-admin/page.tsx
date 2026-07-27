@@ -124,16 +124,17 @@ export default async function PlatformAdminPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
       <div>
-        <h1 className="text-2xl font-bold text-navy-900">Platform Admin</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">LensWise operations</p>
+        <h1 className="mt-1 text-3xl font-bold tracking-tight text-navy-900">Platform admin</h1>
         <p className="mt-1 text-sm text-navy-500">Manage registration keys and organizations across LensWise.</p>
       </div>
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <h2 className="mb-3 text-lg font-semibold text-navy-900">Generate a registration key</h2>
         <RegistrationKeyGenerator />
       </section>
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <h2 className="mb-3 text-lg font-semibold text-navy-900">Registration keys</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -186,7 +187,7 @@ export default async function PlatformAdminPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <h2 className="text-lg font-semibold text-navy-900">Organizations</h2>
         <p className="mb-3 mt-0.5 text-xs text-navy-500">
           <span className="font-medium">Lifetime Complimentary Access</span> grants an organization permanent LensWise

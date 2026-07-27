@@ -20,7 +20,7 @@ export const CheckboxField = React.forwardRef<HTMLInputElement, CheckboxFieldPro
       <label
         htmlFor={inputId}
         className={cn(
-          "flex items-start gap-3 rounded-md border border-navy-200 bg-white px-4 py-3 min-h-[44px] cursor-pointer select-none",
+          "flex min-h-[44px] cursor-pointer select-none items-start gap-3 rounded-xl border border-navy-200 bg-white px-4 py-3 shadow-soft",
           "has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50",
           "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-teal-600",
           className

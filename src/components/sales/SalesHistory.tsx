@@ -158,7 +158,7 @@ export function SalesHistory({
         <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-teal-800">
           {locationName}
         </span>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-navy-900">Sales history</h1>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-navy-900 sm:text-4xl">Sales history</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-navy-500">
           Payments recorded in LensWise and the inventory movements connected to them.
           Payments are still collected in your existing POS or as cash.
@@ -166,15 +166,15 @@ export function SalesHistory({
       </header>
 
       <section className="mb-6 grid gap-3 sm:grid-cols-3" aria-label="Sales summary">
-        <div className="rounded-lg border border-navy-100 bg-white p-4 shadow-card">
+        <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-500">Completed sales</p>
           <p className="mt-1 text-2xl font-bold text-navy-900">{completedSales.length}</p>
         </div>
-        <div className="rounded-lg border border-navy-100 bg-white p-4 shadow-card">
+        <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-500">Recorded total</p>
           <p className="mt-1 text-2xl font-bold text-navy-900">{formatCents(collectedCents)}</p>
         </div>
-        <div className="rounded-lg border border-navy-100 bg-white p-4 shadow-card">
+        <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-500">Reversed / returned</p>
           <p className="mt-1 text-2xl font-bold text-navy-900">
             {sales.length - completedSales.length}
@@ -189,7 +189,7 @@ export function SalesHistory({
       ) : null}
 
       {!loadError && sales.length === 0 ? (
-        <section className="rounded-xl border border-dashed border-navy-200 bg-white px-6 py-14 text-center">
+        <section className="rounded-2xl border border-dashed border-navy-200 bg-white px-6 py-14 text-center shadow-soft">
           <ReceiptText className="mx-auto h-10 w-10 text-navy-300" aria-hidden="true" />
           <h2 className="mt-3 text-lg font-semibold text-navy-900">No sales recorded yet</h2>
           <p className="mt-1 text-sm text-navy-500">
@@ -200,7 +200,7 @@ export function SalesHistory({
 
       <div className="space-y-3">
         {sales.map((sale) => (
-          <article key={sale.id} className="rounded-xl border border-navy-100 bg-white p-4 shadow-card sm:p-5">
+          <article key={sale.id} className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
               <div className="relative h-24 w-full shrink-0 overflow-hidden rounded-lg bg-navy-50 sm:w-36">
                 {sale.frameImageUrl ? (

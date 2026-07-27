@@ -28,7 +28,7 @@ export function SecuritySection({ canManagePin }: { canManagePin: boolean }) {
 
       {canManagePin ? (
         <>
-          <section className="rounded-lg border border-navy-100 bg-white p-5">
+          <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
             <h3 className="mb-3 text-base font-semibold text-navy-900">Change Office PIN</h3>
             <PinForm
               action={changePinAction}
@@ -42,7 +42,7 @@ export function SecuritySection({ canManagePin }: { canManagePin: boolean }) {
             />
           </section>
 
-          <section className="rounded-lg border border-navy-100 bg-white p-5">
+          <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
             <h3 className="mb-1 text-base font-semibold text-navy-900">Reset a forgotten Office PIN</h3>
             <p className="mb-3 text-sm text-navy-500">
               Sets a new PIN using your owner account. Your old PIN is never shown or emailed.
@@ -59,12 +59,12 @@ export function SecuritySection({ canManagePin }: { canManagePin: boolean }) {
           </section>
         </>
       ) : (
-        <section className="rounded-lg border border-navy-100 bg-white p-5">
+        <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
           <p className="text-sm text-navy-600">Only the organization owner can change or reset the Office PIN.</p>
         </section>
       )}
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <h3 className="mb-1 text-base font-semibold text-navy-900">Lock protected settings</h3>
         <p className="mb-3 text-sm text-navy-500">
           Immediately re-lock protected settings on this device. You&apos;ll need the Office PIN to unlock again. Billing

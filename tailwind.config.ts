@@ -37,9 +37,12 @@ const config: Config = {
         },
         paper: v("--c-paper"),
         white: v("--c-white"),
+        coral: v("--c-coral"),
+        limeAccent: v("--c-lime-accent"),
       },
       fontFamily: {
         sans: [
+          "Avenir Next",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
@@ -50,8 +53,9 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        soft: "0 1px 2px 0 rgba(22, 28, 41, 0.06), 0 1px 3px 0 rgba(22, 28, 41, 0.08)",
-        card: "0 1px 3px 0 rgba(22, 28, 41, 0.08)",
+        soft: "0 8px 24px rgba(16, 36, 62, 0.07)",
+        card: "0 12px 32px rgba(16, 36, 62, 0.08)",
+        lifted: "0 22px 55px rgba(16, 36, 62, 0.12)",
       },
       spacing: {
         "safe-top": "env(safe-area-inset-top)",

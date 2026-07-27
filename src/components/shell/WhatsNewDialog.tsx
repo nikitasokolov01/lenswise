@@ -41,9 +41,9 @@ export function WhatsNewDialog({ initiallyOpen }: { initiallyOpen: boolean }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="whats-new-title"
-        className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-navy-100 bg-white shadow-lifted"
       >
-        <div className="bg-gradient-to-br from-navy-950 to-teal-800 px-6 py-6 text-white sm:px-8">
+        <div className="bg-gradient-to-br from-navy-950 via-navy-900 to-teal-800 px-6 py-6 text-white sm:px-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">
             {CURRENT_CHANGELOG.eyebrow}
           </p>
@@ -92,4 +92,3 @@ export function WhatsNewDialog({ initiallyOpen }: { initiallyOpen: boolean }) {
     </div>
   );
 }
-

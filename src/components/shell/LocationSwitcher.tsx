@@ -29,7 +29,7 @@ export function LocationSwitcher({
         name="locationId"
         value={activeLocationId}
         onChange={(event) => event.currentTarget.form?.requestSubmit()}
-        className="h-9 max-w-[150px] appearance-none truncate rounded-full border border-teal-200 bg-teal-50 py-1 pl-8 pr-7 text-xs font-semibold text-navy-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100 sm:max-w-[210px]"
+        className="h-10 max-w-[140px] appearance-none truncate rounded-full border border-teal-200 bg-teal-50 py-1 pl-8 pr-7 text-xs font-bold text-navy-900 outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-100 sm:max-w-[210px]"
         aria-label="Active location"
       >
         {locations.map((location) => (
@@ -42,7 +42,7 @@ export function LocationSwitcher({
         className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-navy-400"
         aria-hidden="true"
       >
-        ▾
+        ⌄
       </span>
     </form>
   );

@@ -1,231 +1,295 @@
-# LensWise — Technical Handoff
+# LensWise — Claude Implementation Handoff
 
-> Handoff for the next coding agent. **Confirmed** = verifiable in the repo.
-> **Assumption / Suggestion** = my inference or recommendation, needs owner
-> confirmation. No secrets are included.
+Last updated: **2026-07-26**
 
----
+This document describes the current repository state for the next coding agent.
+It contains no secret values. Treat statements about code as confirmed from the
+repository; confirm external Supabase, Stripe, GitHub, and Vercel state before
+changing or deploying those systems.
 
-## 1. Product goal & intended users (Confirmed)
+## Current product
 
-LensWise is a **multi-tenant SaaS optical quote builder**. In front of a patient,
-an optician configures a pair of glasses (frame, lens type, material, coating,
-photochromic, tint, blue light, prescription) and instantly sees an itemized
-price: retail total, insurance contribution, discounts, surfacing fees, and final
-patient responsibility.
+LensWise is a multi-tenant optical-office application for:
 
-- **Intended users:** optical practices/offices. Each office = one **Organization**
-  (one owner account, used on shared office devices/iPads). Staff use the Quote
-  Builder through the signed-in office account.
-- **Platform Super Admin:** LensWise-internal role for cross-org management
-  (registration keys, disable/enable orgs, complimentary access).
-- **Anonymity:** the Quote Builder is deliberately anonymous — no patient PII is
-  collected or stored. Do not add PII fields.
+- guided eyewear quotes and lens selection;
+- prescription and one-number/two-number PD entry;
+- office pricing, insurance, discounts, and printable estimates;
+- a licensed frame catalog with images, colors, sizes, and measurements;
+- frame inventory, retail price, quantity, low-stock thresholds, archive, and
+  permanent delete;
+- location-specific inventory under one organization;
+- recording externally collected cash/card sales and adjusting stock;
+- voids and returns that restore linked stock;
+- subscription billing and platform administration.
 
-## 2. Tech stack (Confirmed)
+The Quote Builder intentionally does **not** collect patient PII. Do not add
+patient names, birthdays, addresses, or other identifying fields without an
+explicit product decision and a security/privacy review.
 
-- Next.js **14.2.5** App Router, TypeScript, Tailwind (CSS-variable palette),
-  Zod, Vitest (`environment: "node"`, only `src/**/*.test.ts`).
-- Supabase: Auth, Postgres, Row Level Security, `@supabase/ssr`. Clients in
-  `src/lib/supabase/{client,server,admin,middleware}.ts`.
-- Stripe billing: `stripe@^16.12.0`, server-only client (`src/lib/stripe/*` is
-  marked `server-only`).
-- `bcryptjs` for the Office PIN hash. `server-only` package guards secret modules.
-- Pure calculation engine in `src/lib/calculation/` (framework-free, unit-tested).
+## 2026-07-26 landing and visual-system update
 
-## 3. What is completed (Confirmed)
+The original cream/teal/coral landing concept is now the real homepage at `/`.
+The same component remains available at `/landing-preview` as a temporary alias.
 
-- **Quote engine**: pricing, insurance (copay replaces retail, allowances),
-  prescription display toggles, high-cylinder + Transitions custom-color
-  **surfacing** (selectable w/ auto-recommend, one fee max), **tints** (solid +
-  gradient per color), **blue light** (independent configurable option),
-  **per-material compatibility** (lens types / progressive designs). All itemized.
-- **Auth & tenancy**: Supabase Auth, middleware route protection, org context,
-  RLS isolation, audit log, atomic registration RPC.
-- **Public onboarding**: marketing landing at `/`, `/start-trial` (no key) →
-  Stripe Checkout → **webhook creates the org** (`create_org_for_owner`).
-- **Stripe billing**: Checkout, Customer Portal, signature-verified webhook,
-  Stripe-managed 14-day trial, **one lifetime trial per org** (`trial_redeemed_at`).
-- **Settings area** (`/settings`): one PIN-protected area with sections
-  Organization, Pricing, Customer Display, Security, **Billing** (Team removed).
-- **Office PIN**: bcrypt hash, HTTP-only signed 15-min unlock cookie, brute-force
-  cooldown, audit. **Billing is exempt** from the PIN.
-- **Platform Admin**: registration keys, org disable/enable, **complimentary
-  access** grant/revoke.
-- **Dark mode**: `ThemeProvider` (light/dark/system), account-menu toggle, landing
-  toggle; print always light.
+- `src/app/page.tsx` performs the server-side auth lookup and renders
+  `LandingPreview`.
+- `src/app/landing-preview/LandingPreview.tsx` contains the marketing structure.
+- `src/app/landing-preview/LandingPreview.module.css` contains the isolated
+  marketing-page styling.
+- The Apple-inspired and Hive-inspired preview routes were removed.
+- The homepage uses fictional demonstration records only: generic collections,
+  `LW-*` models, and `Location A`/`Location B`.
+- Never place production office names, customer names, licensed real-world frame
+  names, or other live account data in public marketing fixtures.
 
-## 4. What is unfinished / not verified (Confirmed unless noted)
+The product UI was updated to match that homepage:
 
-- **No build/test verification ran in this environment.** The sandbox could not
-  run `vitest`, `next build`, or a trustworthy `tsc` (see §6). **The owner must
-  run `npm install && npm run typecheck && npm test && npm run build` locally.**
-- **Migrations 0000–0009 exist in the repo but may not all be applied** to the
-  live Supabase project (see §7). *Assumption:* the owner applies them.
-- **Landing theme toggle for an authenticated user** writes only localStorage,
-  not their account profile (account-menu toggle still persists to the profile).
-  *Assumption:* acceptable; confirm if you want landing changes to sync to the
-  account.
-- Privacy/Terms pages and the `support@lenswise.app` contact + `lenswise.app`
-  references are **placeholder copy** — need real legal text and contact.
+- cream paper canvas: `#f7f4ec`;
+- deep ink/navy: `#10243e`;
+- primary teal: `#0d7c82`;
+- mint: `#9fe3d6`;
+- lime accent: `#d8f58c`;
+- coral accent: `#ff9c7c`;
+- rounded cards, pill actions/navigation, strong editorial headings, light navy
+  borders, and soft shadows.
 
-## 5. Recommended next tasks (priority order — Suggestions)
+The palette is implemented with CSS variables in `src/app/globals.css` and
+Tailwind mappings in `tailwind.config.ts`. Shared UI primitives in
+`src/components/ui/` should be reused instead of creating ad-hoc controls.
+The authenticated chrome is in `src/components/shell/AppShell.tsx`.
 
-1. **Run full local verification** (`npm install`, typecheck, `npm test`,
-   `npm run build`) and apply pending Supabase migrations; fix anything that
-   surfaces. Nothing here has been build-verified in-sandbox.
-2. **End-to-end Stripe test in test mode**: start-trial → Checkout → webhook
-   creates org → trialing → cancel → blocked → resubscribe (no 2nd trial) →
-   complimentary grant/revoke. Confirm with `stripe listen`.
-3. **Finalize legal/contact content** (Privacy, Terms, contact email, domain) and
-   real plan price alignment between `LENSWISE_PLAN` display and `STRIPE_PRICE_ID`.
-4. **Decide the fate of legacy role fields** (`admin`/`staff`) now that Team is
-   removed — currently retained in DB and RLS but unused in UI (see §10).
-5. **Add a lightweight render-test harness** (e.g. `@testing-library/react` +
-   jsdom) so component behaviors (billing CTAs hidden when complimentary, toggle
-   rendering) can be tested — currently only pure logic is unit-tested.
+Important performance decision: the owner browses without hardware acceleration.
+Keep the expressive layout, but do not reintroduce scroll parallax, continuous
+motion, large blur/backdrop-filter layers, or expensive sticky visual scenes.
+Small color transitions and static gradients are fine. Respect
+`prefers-reduced-motion` for any future motion.
 
-## 6. Rules that MUST NOT be accidentally changed (Confirmed)
+## Routes
 
-**Pricing / calculation** (`src/lib/calculation/`, `src/lib/pricing/`)
-- `calculateQuote()` is the single entry point; integer **cents** only, never
-  floats. Every automatic fee is its own line item (nothing buried).
-- **Surfacing**: only **one** surfacing fee is ever charged even if multiple
-  rules qualify (winner = highest amount); high-cylinder rule requires Single
-  Vision/Bifocal + a material flagged `appliesToHighCylinderSurfacing` and **not**
-  `isHighIndex`; threshold is office-configurable (`highCylinderThresholdDiopters`).
-  Manual override is sticky (`surfacingOverride: boolean|null`) and only
-  re-evaluates when prescription/material/lens type/photochromic/config change.
-- **Insurance**: copay **replaces** retail (does not add); allowance pools;
-  `InsuranceBreakdown` itemization. Coverage categories retail/copay/covered.
-- **Material compatibility**: empty compatibility list = compatible with all
-  (back-compat). Invalid selections auto-clear.
-- **Pricing config** is JSONB per org, **versioned** (`SCHEMA_VERSION`, currently
-  11) with migrations in `migratePricingConfiguration.ts` + Zod validation. Bump
-  the version and add a migration step for any schema change.
-- Customer-facing views hide exact tech/brand/progressive names unless
-  `showExactTechnologyNamesOnCustomerQuotes` is on.
+- `/` — public marketing homepage.
+- `/landing-preview` — temporary alias of the chosen homepage.
+- `/login`, `/start-trial`, password/reset/invite routes — public auth/onboarding.
+- `/app` — authenticated Quote Builder.
+- `/inventory` — location-specific frame inventory and catalog browser.
+- `/sales` — sales, voids, and returns for the active location.
+- `/settings` — organization, pricing, customer display, security, and billing.
+- `/account` — profile, password, and theme.
+- `/platform-admin` — Super Admin operations.
 
-**Billing access priority** (`src/lib/billing/status.ts` `billingAccess`)
-1. `lifetimeComplimentary` → **full** (checked first, before Stripe).
-2. Stripe `trialing`/`active` → full; `past_due` → warn; everything else
-   (null/canceled/unpaid/incomplete/incomplete_expired) → **blocked**.
-- Org **disabled** by Platform Admin is enforced earlier in `requireActiveOrg`
-  and **always** blocks regardless of billing/complimentary.
-- **One trial per org**: `trial_redeemed_at` is set once by the webhook and
-  **never cleared**; cancel/delete/replace never restores trial eligibility.
-- **Stripe webhook sync upserts only Stripe columns** — it must never touch
-  `lifetime_complimentary*` or `trial_redeemed_*`.
+Legacy `/admin`, `/organization`, `/billing`, and `/team` routes are redirect
+stubs. Do not assume they are active product surfaces.
 
-**Permissions / security**
-- Super Admin is DB-only, bootstrapped from `LENSWISE_SUPER_ADMIN_EMAIL`; **no UI
-  self-promotion**; complimentary access never grants Super Admin.
-- Office PIN is a **second factor**, never a role substitute; Staff can’t reach
-  Settings even with the PIN; billing sections stay reachable without the PIN.
-- `organization_billing` and `organization_security` have **no client write
-  policy** — only service-role/server actions write them. Never expose the PIN
-  hash or service-role key to the browser.
-- Registration keys stored **hashed** (SHA-256), shown once.
+## Tech stack
 
-## 7. Supabase migrations & DB status (Confirmed files; application = Assumption)
+- Next.js **14.2.35** App Router and TypeScript.
+- React 18, Tailwind CSS, lucide-react, Zod.
+- Supabase Auth, Postgres, Storage, RLS, and `@supabase/ssr`.
+- Stripe Checkout, Customer Portal, and webhook-based subscription sync.
+- Vitest for logic tests.
+- Integer cents for all money calculations.
 
-Files in `supabase/migrations/` (do **not** edit already-applied ones):
-- `…000000_init_schema` / `…000001_functions_rls` — tables, RLS, audit, RPCs.
-- `…000002_theme_preference` — `profiles.theme_preference`.
-- `…000003_billing` — `organization_billing` + RLS + trial (later revised).
-- `…000004_stripe_managed_trial` — Stripe owns the trial; `subscription_status`
-  nullable.
-- `…000005_settings_pin` — `organization_security` (bcrypt PIN, cooldown).
-- `…000006_remove_team` — revokes invite RPC + drops `invitations` client
-  policies (data preserved).
-- `…000007_trial_once` — `trial_redeemed_at` + `trial_redeemed_subscription_id`.
-- `…000008_public_onboarding` — `create_org_for_owner` keyless RPC.
-- `…000009_complimentary_access` — `lifetime_complimentary` (+ granted_at/by).
+## Feature state
 
-**Action needed:** run `supabase db push` (or apply via SQL editor) against the
-live project so 0004–0009 are present. *Assumption:* not yet all applied.
-Schema note discovered: **no FK exists between `organization_members` and
-`profiles`** (both reference `auth.users`) — do NOT PostgREST-embed across that
-boundary; join `organization_members.user_id → profiles.id` in TypeScript.
+### Quotes and prescriptions
 
-## 8. Stripe & Vercel status (Confirmed docs; configuration = Assumption)
+- Guided stages: order, prescription, lenses, add-ons, review.
+- Frame-only and lens-only flows are supported.
+- PD supports one total number or separate right/left values; validation prevents
+  implausible input.
+- The internal worksheet prints PD, frame brand/model, color, size/measurements,
+  SKU, and relevant order details.
+- Lens material compatibility and pricing selections auto-clear when invalid.
+- Customer-facing and internal print views remain separate.
 
-- Docs: `docs/STRIPE_SETUP.md`, `docs/VERCEL_DEPLOYMENT.md`, `docs/SUPABASE_SETUP.md`.
-- **Required env vars** (names only — set real values locally/in Vercel; keep the
-  server-only ones un-prefixed):
-  - Public: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-    `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`.
-  - Server-only: `SUPABASE_SERVICE_ROLE_KEY`, `LENSWISE_SUPER_ADMIN_EMAIL`,
-    `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
-- Webhook endpoint: `POST /api/stripe/webhook` (excluded from middleware; uses raw
-  body + signature verification). Events needed: `checkout.session.completed`,
-  `customer.subscription.created/updated/deleted`, `invoice.paid`,
-  `invoice.payment_failed`, `customer.subscription.trial_will_end`.
-- The 14-day trial is set in code (`trial_period_days: 14`) — **no Stripe coupon
-  needed**. Local testing: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
-- *Assumption:* production Stripe product/price, webhook endpoint, Customer Portal,
-  and Vercel env vars still need to be configured by the owner. No secret values
-  are known to me.
+### Catalog and frame inventory
 
-## 9. Recently changed / partially complete (Confirmed)
+- The catalog is stored in Supabase and grouped by model with selectable
+  color/size variants.
+- Unavailable color/size combinations are disabled.
+- Catalog selection supports several variants of the same model in one add
+  operation.
+- Capri lines FLEXURE, GRANDE, MILLENNIAL, and SIMPLYLITE import named
+  **Additional Colors** as selectable variants. Those variants share the one
+  representative photo supplied by Frames Data and are identified in `rawData`.
+- The expanded catalog target list also includes Ermenegildo Zegna and Tom Ford
+  by stable Frames Data brand ID.
+- Catalog browsing is paginated.
+- Imported/mirrored images appear in the catalog, inventory, Quote Builder frame
+  selection, sales history, and internal worksheet where applicable.
+- Inventory is scoped to the active organization location.
+- Delete is a true inventory delete and is distinct from archive.
 
-Most recent work (newest first):
-- **Platform Admin org table layout fix** + **landing dark-mode toggle**
-  (`src/app/platform-admin/page.tsx`, `src/components/platform/OrgStatusButton.tsx`,
-  `ComplimentaryAccessControl.tsx`, `src/lib/platform/orgActionLabels.ts`,
-  `src/components/marketing/LandingThemeToggle.tsx`, `src/app/page.tsx`,
-  `src/lib/theme/resolveTheme.ts`, `src/components/theme/ThemeProvider.tsx`).
-- **Platform Admin org-loading refactor**: 4 flat admin queries + TS Map joins
-  (fixed a PGRST200 caused by embedding `organization_members → profiles`).
-- **Complimentary access** feature (migration 0009, `billingAccess` priority,
-  Platform Admin grant/revoke, Billing page state, banners).
-- **Public onboarding + landing + `/app` move** (app home moved from `/` to
-  `/app`; `/` is now the public landing).
-- No known half-written code. Old `/admin`, `/organization`, `/team`, `/billing`
-  are redirect stubs into `/settings`. `/register` + registration-key infra remain
-  but are unlinked (kept for internal manual onboarding).
+Frames Data integration details are in
+`docs/FRAMES_DATA_INTEGRATION.md`. The web importer is a licensed-account import
+utility, not a runtime dependency of the normal LensWise UI:
 
-## 10. Decisions from chat NOT fully documented in the repo
+- `FRAMES_DATA_USERNAME` and `FRAMES_DATA_PASSWORD` are only needed when running a
+  future licensed import.
+- Imported catalog browsing does not need those login credentials.
+- `FRAMES_DATA_IMPORT_SECRET` is required by the protected import endpoint and
+  must be at least 32 characters.
+- Image mirroring uses the `frame-catalog-images` Supabase Storage bucket.
+- Do not commit credentials, cookies, raw licensed exports, or secret values.
 
-- **App home moved to `/app`**; `/` is the marketing landing. Guards/menus redirect
-  `/`→`/app`. (Confirmed in code; note for anyone expecting the old root.)
-- **Team fully removed** from the product (no employee accounts/invitations); one
-  owner account per office on shared devices. `organization_members` and
-  `invitations` tables + `admin`/`staff` roles **remain in the DB** (intentionally,
-  to avoid a risky migration) but are **unused by the UI**. Decision to eventually
-  prune them is open.
-- **Trial is Stripe-managed**, not local; the earlier “local 14-day trial at
-  registration” was removed. Registration/onboarding now creates an **empty**
-  billing row and Stripe owns the trial.
-- **Office PIN session** is a fixed 15-minute absolute expiry (spec allowed “15 min
-  inactivity or another clearly defined short duration”); it’s signed with a key
-  **derived from `SUPABASE_SERVICE_ROLE_KEY`** (no new env var).
-- **Complimentary access** is an internal override with **no** fake Stripe
-  subscription/coupon/$0 invoice.
+### Locations
 
-## 11. Assumptions needing owner confirmation
+- One organization can contain multiple office locations.
+- The active-location switcher is in the shared app bar.
+- Inventory, quotes, printed office details, and sales use the active location.
+- Multi-location setup notes are in `docs/MULTI_LOCATION.md`.
 
-- Supabase migrations 0004–0009 have **not** been applied yet — confirm and run.
-- Production Stripe (product/price/webhook/portal) and Vercel env vars are **not**
-  configured yet — confirm.
-- `LENSWISE_PLAN` shows **$49/month** as display copy only; confirm it matches the
-  real recurring price behind `STRIPE_PRICE_ID`.
-- Keep `admin`/`staff` roles + `invitations`/`organization_members` tables for now
-  (removal deferred) — confirm.
-- `/register` staying reachable-by-URL (unlinked) for internal key onboarding —
-  confirm intended.
-- Placeholder legal copy + `support@lenswise.app` + `lenswise.app` must be replaced.
-- Landing theme change by an authenticated user is localStorage-only (not synced to
-  their profile) — confirm acceptable.
+The intended business model is one organization with separately scoped
+locations, not independent duplicate user accounts for each office.
 
----
+### Sales and stock
 
-## Environment caveat (important, Confirmed observation)
+- Payment is collected outside LensWise.
+- Completing a sale records cash or card details and deducts one linked frame.
+- Merely creating or printing a quote does not change stock.
+- Idempotency prevents a completed quote from deducting inventory twice.
+- Owners/admins can void a sale or record a return; linked stock is restored.
+- Sales history keeps the frame snapshot and actor information.
 
-All code was authored in a sandbox that **could not** install deps or run
-`npm`/`vitest`/`next build`, and where the mounted filesystem occasionally served
-stale/torn reads to shell tools (host file tools were authoritative). Therefore:
-**treat the code as not-yet-CI-verified** and run a full local
-`npm install && npm run typecheck && npm test && npm run build` before deploying.
-`vitest` needs the platform-native `@rollup/*` binary and `next build` needs
-`@next/swc-*`; a fresh `npm install` on the target OS provides them.
+### Auth, settings, and billing
+
+- Supabase middleware protects authenticated routes.
+- RLS isolates organizations.
+- Settings are owner/admin scoped; sensitive settings use the Office PIN.
+- The Office PIN is a second factor, never a role escalation.
+- Billing remains reachable without the Office PIN.
+- Super Admin is database-controlled; there is no UI self-promotion.
+- Lifetime complimentary access is checked before Stripe status.
+- Stripe trials are one per organization and are not restored after cancellation.
+
+## Calculation guardrails
+
+Do not change these incidentally:
+
+- `calculateQuote()` is the single calculation entry point.
+- All money is integer cents; do not introduce floating-point authoritative state.
+- Insurance copay replaces retail for the covered category; it is not added on
+  top.
+- Allowances and itemized insurance breakdowns must remain visible.
+- At most one surfacing fee is charged; the highest qualifying fee wins.
+- Invalid material/lens/design combinations must not persist.
+- Pricing JSON is versioned. `SCHEMA_VERSION` is currently **11**. Any schema
+  change needs a version bump, a migration step in
+  `migratePricingConfiguration.ts`, updated defaults, Zod validation, and tests.
+- Exact technology names remain hidden from customer views unless the organization
+  explicitly enables them.
+
+## Security guardrails
+
+- Never expose `SUPABASE_SERVICE_ROLE_KEY`, Stripe secrets, the Frames Data import
+  secret, licensed credentials, or PIN hashes to client components.
+- Server mutations must check authorization even when the UI hides a control.
+- Preserve RLS on all organization/location data.
+- Registration keys are stored hashed and shown once.
+- Stripe webhook updates must not overwrite complimentary-access fields.
+- An organization disabled by Platform Admin remains blocked regardless of its
+  billing state.
+
+## Database migrations present
+
+Do not edit migrations that may already be applied. Add a new timestamped
+migration for schema changes.
+
+Base/platform migrations:
+
+- `20240601000000_init_schema.sql`
+- `20240601000001_functions_rls.sql`
+- `20240601000002_theme_preference.sql`
+- `20240601000003_billing.sql`
+- `20240601000004_stripe_managed_trial.sql`
+- `20240601000005_settings_pin.sql`
+- `20240601000006_remove_team.sql`
+- `20240601000007_trial_once.sql`
+- `20240601000008_public_onboarding.sql`
+- `20240601000009_complimentary_access.sql`
+
+Inventory/catalog/location/sales migrations:
+
+- `20260725045907_frame_inventory.sql`
+- `20260725050852_frame_inventory_actor_indexes.sql`
+- `20260725053347_frames_data_catalog_import.sql`
+- `20260725053936_catalog_import_runs_superadmin_policy.sql`
+- `20260726013310_mirror_frame_catalog_images.sql`
+- `20260726021237_organization_locations.sql`
+- `20260726040118_allow_frame_inventory_delete.sql`
+- `20260726043146_sales_inventory_movements_and_changelog.sql`
+- `20260726043308_sales_inventory_movement_indexes.sql`
+
+Repository presence does not prove every migration is applied to production.
+Check the linked Supabase project before deployment.
+
+## Environment variable names
+
+Public:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SITE_URL`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+
+Server-only:
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `LENSWISE_SUPER_ADMIN_EMAIL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_ID`
+- `FRAMES_DATA_IMPORT_SECRET`
+
+Licensed importer only:
+
+- `FRAMES_DATA_USERNAME`
+- `FRAMES_DATA_PASSWORD`
+- `FRAMES_DATA_IMPORT_URL`
+- `FRAMES_DATA_SEARCH_TERM`
+- `FRAMES_DATA_SAMPLE_LIMIT`
+- `FRAMES_DATA_REQUEST_DELAY_MS`
+
+See `docs/SUPABASE_SETUP.md`, `docs/STRIPE_SETUP.md`,
+`docs/VERCEL_DEPLOYMENT.md`, and `docs/FRAMES_DATA_INTEGRATION.md`.
+
+## Verification completed for this handoff
+
+On 2026-07-26:
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed with no warnings.
+- `npm test` — **22 files / 184 tests passed**.
+- `npm run build` — passed; 28 routes generated.
+- `/` built at 1.46 kB route size and uses the chosen landing component.
+- `/landing-apple-preview` and `/landing-hive-preview` are absent from the route
+  manifest.
+- A source scan found no real frame names or real office names in the marketing
+  page.
+- Frames Data adapter tests — **10/10 passed**, including Capri
+  `Additional Colors` normalization.
+- Targeted licensed import for FLEXURE, GRANDE, MILLENNIAL, SIMPLYLITE,
+  Ermenegildo Zegna, and Tom Ford — **495 styles / 1,604 variants**, completed
+  as an incremental import.
+- Full image mirror integrity pass — **16,447 unique images processed**:
+  1,135 newly mirrored, 84 resumed, 15,227 verified, zero failures, and one
+  source record without an available image.
+
+The build emits a Supabase warning that Node.js 20 and below will lose support in
+a future Supabase JS version. Current code still builds; plan a Node 22 runtime
+upgrade before that becomes enforced.
+
+## Suggested continuation
+
+1. Review `/`, `/app`, `/inventory`, `/sales`, `/settings`, and the auth pages at
+   desktop and tablet widths, especially the crowded authenticated app bar.
+2. If the chosen landing is final, remove the `/landing-preview` alias and its
+   public-path test in a later cleanup.
+3. Confirm all 2026 migrations and the image Storage bucket exist in production.
+4. Confirm production Vercel environment variables and Stripe webhook state.
+5. Replace placeholder Privacy/Terms/contact copy with approved legal and support
+   information.
+6. Keep future UI work within the shared palette/primitives and avoid expensive
+   animation for software-rendered browsers.
+
+The landing/design changes in this handoff are implemented and verified locally,
+but they have **not** been committed, pushed, or deployed by this handoff.

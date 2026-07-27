@@ -56,12 +56,29 @@ export const EXPANDED_CATALOG_TARGETS = Object.freeze([
   { filter: "collection", id: "15427", name: "Saint Laurent" },
   { filter: "collection", id: "18106", name: "Valentino" },
   { filter: "collection", id: "9256", name: "DICAPRIO" },
-  { filter: "collection", id: "6239", name: "FLEXURE" },
-  { filter: "collection", id: "15091", name: "GRANDE" },
-  { filter: "collection", id: "15373", name: "MILLENNIAL" },
-  { filter: "collection", id: "15964", name: "SIMPLYLITE" },
+  { filter: "brand", id: "8928", name: "FLEXURE" },
+  { filter: "brand", id: "8929", name: "GRANDE" },
+  { filter: "brand", id: "8921", name: "MILLENNIAL" },
+  { filter: "brand", id: "8932", name: "SIMPLYLITE" },
+  { filter: "brand", id: "8439", name: "Ermenegildo Zegna" },
+  { filter: "brand", id: "8528", name: "Tom Ford" },
   { filter: "brand", id: "4725", name: "Silhouette" },
 ]);
+
+export function selectExpandedCatalogTargets(targetIds = []) {
+  if (targetIds.length === 0) return EXPANDED_CATALOG_TARGETS;
+  const requested = new Set(targetIds.map((id) => String(id).trim()));
+  const selected = EXPANDED_CATALOG_TARGETS.filter((target) =>
+    requested.has(target.id)
+  );
+  const missing = Array.from(requested).filter(
+    (id) => !selected.some((target) => target.id === id)
+  );
+  if (missing.length > 0) {
+    throw new Error(`Unknown expanded catalog target ID: ${missing.join(", ")}.`);
+  }
+  return selected;
+}
 
 export function decodeHtml(value) {
   return String(value ?? "")
@@ -236,6 +253,35 @@ function parseColors(html) {
   });
 }
 
+export function parseAdditionalColors(html) {
+  const value = String(html).match(
+    /<div\b[^>]*\bclass=["'][^"']*\bAddlClrs\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
+  )?.[1];
+  if (!value) return [];
+
+  const seen = new Set();
+  return stripHtml(value)
+    .split(/[,;]+/)
+    .map((color) => color.trim())
+    .filter((color) => {
+      if (!color) return false;
+      const key = color.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function colorSlug(value, fallback) {
+  const slug = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || fallback;
+}
+
 export function parseSearchFrameIds(html) {
   return Array.from(String(html).matchAll(/\bframeid=["'](\d+)["']/gi)).map(
     (match) => match[1]
@@ -311,13 +357,34 @@ export function parseFrameDetails(
       },
     ];
   }
+  const picturedColorNames = new Set(
+    colors
+      .map((color) => color.colorName?.toLocaleLowerCase())
+      .filter(Boolean)
+  );
+  const representativeColor = colors.find((color) => color.imagePath) ?? colors[0];
+  const additionalColors = parseAdditionalColors(html)
+    .filter((colorName) => !picturedColorNames.has(colorName.toLocaleLowerCase()))
+    .map((colorName) => ({
+      colorName,
+      imagePath: representativeColor?.imagePath ?? null,
+      isAdditional: true,
+      picturedColorName: representativeColor?.colorName ?? null,
+    }));
+  colors = [...colors, ...additionalColors];
 
   return colors.flatMap((color, colorIndex) =>
     sizes.map((size, sizeIndex) => {
-      const colorCode = imageCode(
+      const picturedColorCode = imageCode(
         color.imagePath,
         `color-${String(colorIndex + 1).padStart(2, "0")}`
       );
+      const colorCode = color.isAdditional
+        ? `${picturedColorCode}-additional-${colorSlug(
+            color.colorName,
+            String(colorIndex + 1)
+          )}`.slice(0, 80)
+        : picturedColorCode;
       const sizeCode = [
         size.eyeSizeMm ?? "x",
         size.bridgeSizeMm ?? "x",
@@ -364,6 +431,10 @@ export function parseFrameDetails(
           introduced: info.Introduced ?? null,
           warranty: info.Warranty ?? null,
           catalogBrand: sourceBrand,
+          colorAvailability: color.isAdditional
+            ? "additional-color-note"
+            : "pictured",
+          picturedColorName: color.picturedColorName ?? color.colorName ?? null,
           dblMm: size.dblMm,
           circumferenceMm: size.circumferenceMm,
           source: "Frames Data Online licensed catalog",
@@ -443,6 +514,7 @@ function cliOptions(argv) {
     dryRun: false,
     modernOptical: false,
     expandedCatalog: false,
+    catalogTargetIds: [],
     brand: process.env.FRAMES_DATA_SEARCH_TERM || "Modern",
     limit: parsePositiveInteger(
       process.env.FRAMES_DATA_SAMPLE_LIMIT,
@@ -460,6 +532,10 @@ function cliOptions(argv) {
       options.modernOptical = true;
     } else if (argument === "--expanded-catalog") {
       options.expandedCatalog = true;
+    } else if (argument === "--target-id") {
+      const targetId = argv[++index]?.trim();
+      if (!targetId) throw new Error("--target-id requires a value.");
+      options.catalogTargetIds.push(targetId);
     } else if (argument === "--brand") {
       options.brand = argv[++index]?.trim();
     } else if (argument === "--limit") {
@@ -480,6 +556,9 @@ function cliOptions(argv) {
   }
   if (options.modernOptical && options.expandedCatalog) {
     throw new Error("Choose either --modern-optical or --expanded-catalog, not both.");
+  }
+  if (options.catalogTargetIds.length > 0 && !options.expandedCatalog) {
+    throw new Error("--target-id can only be used with --expanded-catalog.");
   }
   if (
     (options.modernOptical || options.expandedCatalog) &&
@@ -839,7 +918,9 @@ async function main() {
   const sourceLabel = options.modernOptical
     ? "modern-optical-selected-collections"
     : options.expandedCatalog
-      ? "expanded-office-catalog"
+      ? options.catalogTargetIds.length > 0
+        ? `expanded-office-catalog-${options.catalogTargetIds.join("-")}`
+        : "expanded-office-catalog"
     : options.brand;
   console.log(
     `Connecting to the licensed Frames Data catalog for "${sourceLabel}"…`
@@ -853,7 +934,7 @@ async function main() {
           ...collection,
           filter: "collection",
         }))
-      : EXPANDED_CATALOG_TARGETS;
+      : selectExpandedCatalogTargets(options.catalogTargetIds);
     for (const target of targets) {
       const collectionIds = await searchFrameIds(jar, username, {
         collectionId: target.filter === "collection" ? target.id : "",

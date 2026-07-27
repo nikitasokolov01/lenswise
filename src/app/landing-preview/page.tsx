@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { LandingPreview } from "@/app/landing-preview/LandingPreview";
+import { LandingPreview } from "./LandingPreview";
 
 export const metadata: Metadata = {
   title: "LensWise — The Optical Office, In Focus",
   description:
-    "Optical quoting, frame inventory, catalog access, sales tracking, and multi-location control in one calm workspace.",
+    "A preview of the next LensWise landing page: optical quoting, frame inventory, catalog access, and multi-location control in one workspace.",
 };
 
-export default async function LandingPage() {
+export default async function LandingPreviewPage() {
   const supabase = createSupabaseServerClient();
   const {
     data: { user },

@@ -307,7 +307,7 @@ function QuoteBuilderReady({
         <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-teal-800">
           {activeLocation.name}
         </span>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-navy-900 sm:text-4xl">Build an eyewear quote</h1>
+        <h1 className="mt-3 text-4xl font-bold tracking-[-0.035em] text-navy-900 sm:text-5xl">Build an eyewear quote</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-navy-500 sm:text-base">
           Guide the patient through each lens decision, keep pricing visible, and finish with a clear estimate.
         </p>
@@ -448,7 +448,7 @@ function QuoteBuilderReady({
             usage={input.usage}
             locationName={activeLocation.name}
           />
-          <div className="rounded-lg border border-navy-100 bg-white p-4 shadow-card">
+          <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-navy-500">Quote tools</p>
             <QuoteActions
               result={result}

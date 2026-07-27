@@ -52,9 +52,9 @@ export function AccountMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex min-h-[44px] items-center gap-2 rounded-md px-2 py-1 text-sm text-navy-700 hover:bg-navy-50"
+        className="flex min-h-[44px] items-center gap-2 rounded-full px-1.5 py-1 text-sm text-navy-700 hover:bg-white"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-600 text-sm font-semibold text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-600 text-sm font-bold text-white shadow-soft">
           {initials}
         </span>
         <ChevronDown className="h-4 w-4 text-navy-400" aria-hidden="true" />
@@ -63,7 +63,7 @@ export function AccountMenu({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-lg border border-navy-100 bg-white shadow-lg"
+          className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-lifted"
         >
           <div className="border-b border-navy-100 px-4 py-3">
             <p className="truncate text-sm font-medium text-navy-900">{fullName || "—"}</p>
@@ -122,7 +122,7 @@ function ThemeToggle() {
       <div
         role="radiogroup"
         aria-label="Theme"
-        className="flex rounded-md border border-navy-200 p-0.5"
+        className="flex rounded-xl border border-navy-200 bg-navy-50 p-1"
       >
         {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
           const active = theme === value;
@@ -134,7 +134,7 @@ function ThemeToggle() {
               aria-checked={active}
               onClick={() => choose(value)}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors",
+                "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
                 active
                   ? "bg-teal-600 text-white"
                   : "text-navy-600 hover:bg-navy-50"

@@ -12,7 +12,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <p className="text-2xl font-bold tracking-tight text-navy-900">LensWise</p>
         <p className="text-sm font-medium text-teal-700">Optical Quote Builder</p>
       </div>
-      <div className="w-full max-w-md rounded-xl border border-navy-100 bg-white p-6 shadow-sm sm:p-8">
+      <div className="w-full max-w-md rounded-3xl border border-navy-100 bg-white p-6 shadow-lifted sm:p-8">
         {children}
       </div>
     </div>

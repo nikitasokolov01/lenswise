@@ -70,6 +70,7 @@ export function canAccess(area: ProtectedArea, actor: Actor): boolean {
  */
 export const PUBLIC_PATHS = [
   "/",
+  "/landing-preview",
   "/login",
   "/register",
   "/start-trial",

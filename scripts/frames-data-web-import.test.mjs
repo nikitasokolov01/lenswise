@@ -6,9 +6,11 @@ import {
   highResolutionFrameImagePath,
   EXPANDED_CATALOG_TARGETS,
   MODERN_OPTICAL_COLLECTIONS,
+  parseAdditionalColors,
   parseFrameDetails,
   parseSearchFrameIds,
   sanitizeCatalogItemForImport,
+  selectExpandedCatalogTargets,
   splitSetCookieHeader,
   stripHtml,
 } from "./frames-data-web-import.mjs";
@@ -71,17 +73,34 @@ test("targets the requested Modern Optical collections by stable ID", () => {
 });
 
 test("targets the expanded office catalog and the full Silhouette brand", () => {
-  assert.equal(EXPANDED_CATALOG_TARGETS.length, 38);
+  assert.equal(EXPANDED_CATALOG_TARGETS.length, 40);
   assert.deepEqual(EXPANDED_CATALOG_TARGETS.at(-1), {
     filter: "brand",
     id: "4725",
     name: "Silhouette",
   });
   assert.deepEqual(
-    EXPANDED_CATALOG_TARGETS.slice(0, -1).every(
-      (target) => target.filter === "collection"
+    EXPANDED_CATALOG_TARGETS.filter((target) =>
+      ["8928", "8929", "8921", "8932", "8439", "8528"].includes(target.id)
     ),
-    true
+    [
+      { filter: "brand", id: "8928", name: "FLEXURE" },
+      { filter: "brand", id: "8929", name: "GRANDE" },
+      { filter: "brand", id: "8921", name: "MILLENNIAL" },
+      { filter: "brand", id: "8932", name: "SIMPLYLITE" },
+      { filter: "brand", id: "8439", name: "Ermenegildo Zegna" },
+      { filter: "brand", id: "8528", name: "Tom Ford" },
+    ]
+  );
+  assert.deepEqual(
+    selectExpandedCatalogTargets(["8928", "8528"]).map(({ id, name }) => [
+      id,
+      name,
+    ]),
+    [
+      ["8928", "FLEXURE"],
+      ["8528", "Tom Ford"],
+    ]
   );
 
   const url = framesDataSearchUrl({
@@ -91,6 +110,64 @@ test("targets the expanded office catalog and the full Silhouette brand", () => 
   });
   assert.equal(url.searchParams.get("args[Filter][BrandIDs]"), "4725");
   assert.equal(url.searchParams.get("args[Filter][CollectionIDs]"), "");
+});
+
+test("turns Capri additional-color notes into stable selectable variants", () => {
+  const html = `
+    <div id="divFrmTtl">Style: FX110<br><span>Capri Optics</span><br><span>FLEXURE</span></div>
+    <div id="divFrmEySz">
+      <table>
+        <tr><td>Eye Size</td><td>A</td><td>B</td><td>DBL</td><td>ED</td><td>Temple</td><td>Bridge</td><td>Circ</td></tr>
+        <tr><td>55</td><td>55.10</td><td>37.80</td><td>18.00</td><td>59.90</td><td>145</td><td>17</td><td>159.6</td></tr>
+      </table>
+    </div>
+    <div class="ImgThumbCntnr">
+      <img src="/ColorSm/458/458C5055.jpg" class="img_detail_thumb">
+      <div class="ImgThumbText" title="Blue">Blue</div>
+    </div>
+    <div class="AddlClrsRw">
+      <div class="AddlClrsTtl">Additional Colors:</div>
+      <div class="AddlClrs">Black, Gunmetal, black</div>
+    </div>
+  `;
+
+  assert.deepEqual(parseAdditionalColors(html), ["Black", "Gunmetal"]);
+  const items = parseFrameDetails(html, "474949", null, "FLEXURE");
+  assert.deepEqual(
+    items.map((item) => ({
+      color: item.colorName,
+      id: item.providerItemId,
+      imageUrl: item.imageUrl,
+      availability: item.rawData.colorAvailability,
+      picturedColor: item.rawData.picturedColorName,
+    })),
+    [
+      {
+        color: "Blue",
+        id: "474949:458C5055:55-17-145:1",
+        imageUrl:
+          "https://www.framesdata.com/Q120WEB/color_b/458/458C5055.jpg",
+        availability: "pictured",
+        picturedColor: "Blue",
+      },
+      {
+        color: "Black",
+        id: "474949:458C5055-additional-black:55-17-145:1",
+        imageUrl:
+          "https://www.framesdata.com/Q120WEB/color_b/458/458C5055.jpg",
+        availability: "additional-color-note",
+        picturedColor: "Blue",
+      },
+      {
+        color: "Gunmetal",
+        id: "474949:458C5055-additional-gunmetal:55-17-145:1",
+        imageUrl:
+          "https://www.framesdata.com/Q120WEB/color_b/458/458C5055.jpg",
+        availability: "additional-color-note",
+        picturedColor: "Blue",
+      },
+    ]
+  );
 });
 
 test("sanitizes source outliers before sending a catalog batch", () => {

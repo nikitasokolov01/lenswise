@@ -94,7 +94,10 @@ licensed manufacturers.
 ### Expanded office catalog import
 
 The importer also includes the licensed designer and value collections selected
-for the LensWise office catalog, plus the complete Silhouette brand (`4725`):
+for the LensWise office catalog, plus complete brand searches for Silhouette
+(`4725`), Capri Optics lines FLEXURE (`8928`), GRANDE (`8929`), MILLENNIAL
+(`8921`), and SIMPLYLITE (`8932`), Ermenegildo Zegna (`8439`), and Tom Ford
+(`8528`):
 
 ```bash
 npm run import:frames-data -- --expanded-catalog
@@ -103,6 +106,21 @@ npm run import:frames-data -- --expanded-catalog
 This preset uses the stable Frames Data collection/brand IDs and runs
 incrementally, so it can be safely repeated to refresh those records without
 deactivating other imported catalog items.
+
+To refresh only selected entries from this preset, repeat `--target-id`:
+
+```bash
+npm run import:frames-data -- --expanded-catalog \
+  --target-id 8928 --target-id 8929 --target-id 8921 --target-id 8932 \
+  --target-id 8439 --target-id 8528
+```
+
+Capri detail pages sometimes photograph one color and list the remaining
+available colors in an **Additional Colors** note. The importer creates a stable,
+selectable variant for each named additional color. Because Frames Data does not
+provide separate photography for those variants, they intentionally share the
+photographed color's representative image; `rawData.colorAvailability` and
+`rawData.picturedColorName` preserve that distinction.
 
 ## Private frame image mirror
 

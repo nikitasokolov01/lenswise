@@ -24,7 +24,7 @@ export async function CustomerDisplaySection({ orgId, userId }: { orgId: string;
         </p>
       </div>
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <form action={updateCustomerDisplayAction} className="space-y-3">
           <CheckboxField
             name="showExact"

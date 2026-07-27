@@ -110,7 +110,7 @@ export function FrameInventoryManager({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-teal-700">Office catalog</p>
-          <h1 className="mt-1 text-2xl font-bold text-navy-900 sm:text-3xl">Frame inventory</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-navy-900 sm:text-4xl">Frame inventory</h1>
           <p className="mt-1 max-w-2xl text-sm text-navy-500">
             Viewing <span className="font-semibold text-navy-700">{locationName}</span>. Keep this
             frame board searchable, track stock, and preserve the exact model and size used for a quote.
@@ -223,7 +223,7 @@ function StatCard({
   warning?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-navy-100 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-navy-500">{label}</p>
         <Icon className={`h-4 w-4 ${warning ? "text-amber-600" : "text-teal-700"}`} />
@@ -246,7 +246,7 @@ function FrameCard({ frame, canManage }: { frame: FrameInventoryItem; canManage:
     <Card className={!frame.isActive ? "opacity-70" : undefined}>
       <CardContent className="p-0">
         <div className="flex gap-4 p-4">
-          <div className="flex h-20 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1 text-teal-700 ring-1 ring-navy-100">
+          <div className="flex h-20 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-navy-50 p-1 text-teal-700 ring-1 ring-navy-100">
             {frame.imageUrl ? (
               <Image
                 src={frame.imageUrl}
@@ -293,10 +293,10 @@ function FrameCard({ frame, canManage }: { frame: FrameInventoryItem; canManage:
               </div>
             </div>
             <details className="group mt-3">
-              <summary className="flex h-9 w-fit cursor-pointer list-none items-center gap-2 rounded-md border border-navy-200 bg-white px-3 text-sm font-medium text-navy-900 hover:bg-navy-50">
+              <summary className="flex h-9 w-fit cursor-pointer list-none items-center gap-2 rounded-full border border-navy-200 bg-white px-3 text-sm font-semibold text-navy-900 hover:bg-navy-50">
                 <Pencil className="h-3.5 w-3.5" /> Edit details
               </summary>
-              <div className="mt-3 rounded-lg border border-navy-100 bg-navy-50/40 p-4">
+              <div className="mt-3 rounded-2xl border border-navy-100 bg-navy-50/40 p-4">
                 <FrameForm mode="edit" frame={frame} />
               </div>
             </details>

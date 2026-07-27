@@ -137,7 +137,7 @@ export function BillingSection({ billing, checkout }: { billing: OrgBilling | nu
         </div>
       ) : null}
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-navy-900">{PLAN_NAME}</h3>
           <Badge variant={statusVariant(status)}>{statusText}</Badge>

@@ -58,12 +58,16 @@ export function AppShell({ context, children }: { context: ShellContext; childre
       <ThemeAccountSync accountTheme={context.themePreference} />
       <WhatsNewDialog initiallyOpen={context.showWhatsNew} />
       {banner ? <BillingBanner banner={banner} canManage={ownerOrAdmin} /> : null}
-      <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-white pt-safe-top">
-        <div className="mx-auto flex max-w-6xl items-center gap-1 px-4 sm:px-6 lg:px-8">
-          <span className="mr-2 flex items-baseline gap-1.5 py-3">
-            <span className="text-sm font-bold tracking-tight text-navy-900">LensWise</span>
-            <span className="hidden text-xs text-navy-400 sm:inline">Optical Quote Builder</span>
-          </span>
+      <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-paper pt-safe-top">
+        <div className="mx-auto flex min-h-[72px] max-w-[1400px] items-center gap-2 px-4 sm:px-6 lg:px-8">
+          <Link href="/app" className="mr-1 flex shrink-0 items-center gap-2.5" aria-label="LensWise quote builder">
+            <span className="flex h-9 w-9 -rotate-3 items-center justify-center rounded-xl bg-navy-900 text-white shadow-soft">
+              <Glasses className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="hidden text-base font-extrabold tracking-[-0.04em] text-navy-900 sm:inline">
+              LensWise
+            </span>
+          </Link>
 
           {context.activeLocation ? (
             <LocationSwitcher
@@ -72,7 +76,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
             />
           ) : null}
 
-          <div className="flex flex-1 items-center gap-1 overflow-x-auto">
+          <div className="flex flex-1 items-center gap-1 overflow-x-auto py-2">
             {links
               .filter((l) => l.show)
               .map(({ href, label, icon: Icon }) => {
@@ -83,10 +87,10 @@ export function AppShell({ context, children }: { context: ShellContext; childre
                     href={href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex min-h-[44px] shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors",
+                      "flex min-h-[42px] shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-semibold transition-colors",
                       active
-                        ? "border-teal-600 text-navy-900"
-                        : "border-transparent text-navy-500 hover:text-navy-800"
+                        ? "bg-navy-900 text-white shadow-soft"
+                        : "text-navy-500 hover:bg-white hover:text-navy-900"
                     )}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />

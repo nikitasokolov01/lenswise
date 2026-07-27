@@ -22,7 +22,7 @@ export function SettingsNav({
 }) {
   const sections = visibleSections(role);
   return (
-    <nav className="no-print -mx-1 flex flex-wrap gap-1 border-b border-navy-100" aria-label="Settings sections">
+    <nav className="no-print flex flex-wrap gap-1.5 rounded-2xl border border-navy-100 bg-white p-1.5 shadow-soft" aria-label="Settings sections">
       {sections.map((section) => {
         const isActive = section === active;
         const showLock = locked && isProtectedSection(section);
@@ -32,10 +32,10 @@ export function SettingsNav({
             href={`/settings?section=${section}`}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex min-h-[44px] items-center gap-1.5 rounded-t-md border-b-2 px-3 text-sm font-medium transition-colors sm:px-4",
+              "flex min-h-[42px] items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors sm:px-4",
               isActive
-                ? "border-teal-600 text-navy-900"
-                : "border-transparent text-navy-500 hover:bg-navy-50 hover:text-navy-800"
+                ? "bg-navy-900 text-white shadow-soft"
+                : "text-navy-500 hover:bg-teal-50 hover:text-navy-900"
             )}
           >
             {SECTION_LABEL[section]}

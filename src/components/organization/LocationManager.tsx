@@ -25,7 +25,7 @@ export function LocationManager({
   canEdit: boolean;
 }) {
   return (
-    <section className="rounded-lg border border-navy-100 bg-white p-5">
+    <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-navy-900">Locations</h3>

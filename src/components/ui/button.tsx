@@ -3,16 +3,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none",
+  "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none",
   {
     variants: {
       variant: {
-        primary: "bg-navy-900 text-white hover:bg-navy-800 active:bg-navy-950",
+        primary: "bg-navy-900 text-white shadow-soft hover:bg-navy-800 active:bg-navy-950",
         secondary:
-          "bg-white text-navy-900 border border-navy-200 hover:bg-navy-50 active:bg-navy-100",
-        accent: "bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800",
-        ghost: "text-navy-700 hover:bg-navy-50",
-        danger: "bg-white text-red-700 border border-red-200 hover:bg-red-50",
+          "bg-white text-navy-900 border border-navy-200 shadow-soft hover:border-teal-200 hover:bg-teal-50 active:bg-navy-100",
+        accent: "bg-teal-600 text-white shadow-soft hover:bg-teal-700 active:bg-teal-800",
+        ghost: "text-navy-700 hover:bg-white hover:text-navy-950",
+        danger: "bg-white text-red-700 border border-red-200 shadow-soft hover:bg-red-50",
       },
       size: {
         default: "h-11 px-4 text-[15px]",

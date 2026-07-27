@@ -22,7 +22,7 @@ export const RadioCard = React.forwardRef<HTMLInputElement, RadioCardProps>(
       <label
         htmlFor={inputId}
         className={cn(
-          "relative flex min-h-[64px] cursor-pointer flex-col justify-center gap-0.5 rounded-lg border border-navy-200 bg-white px-4 py-3",
+          "relative flex min-h-[64px] cursor-pointer flex-col justify-center gap-0.5 rounded-2xl border border-navy-200 bg-white px-4 py-3 shadow-soft",
           "has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50 has-[:checked]:ring-1 has-[:checked]:ring-teal-600",
           "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-teal-600",
           "has-[:disabled]:opacity-40 has-[:disabled]:cursor-not-allowed",

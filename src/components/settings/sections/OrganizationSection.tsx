@@ -62,7 +62,7 @@ export async function OrganizationSection({
         </p>
       </div>
 
-      <section className="rounded-lg border border-navy-100 bg-white p-5">
+      <section className="rounded-2xl border border-navy-100 bg-white p-5 shadow-card sm:p-6">
         <h3 className="mb-1 text-base font-semibold text-navy-900">Company details</h3>
         <p className="mb-3 text-sm text-navy-500">
           Shared identity used for pricing and customer-facing documents.
