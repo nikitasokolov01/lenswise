@@ -10,6 +10,8 @@
 
 .accountMenu {
   flex-shrink: 0;
+  margin-left: auto;
+  position: relative;
 }
 
 @media (max-width: 900px) and (orientation: portrait) {
