@@ -10,10 +10,12 @@ import { AccountMenu } from "@/components/shell/AccountMenu";
 import { ThemeAccountSync, type Theme } from "@/components/theme/ThemeProvider";
 import { BillingBanner } from "@/components/billing/BillingBanner";
 import { LocationSwitcher } from "@/components/shell/LocationSwitcher";
+import { MobileWorkspaceMenu } from "@/components/shell/MobileWorkspaceMenu";
 import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
 import { billingBanner, type OrgBilling } from "@/lib/billing/status";
 import type { OrganizationLocation } from "@/lib/locations/types";
+import styles from "./AppShell.module.css";
 
 export interface ShellContext {
   userId: string;
@@ -59,7 +61,12 @@ export function AppShell({ context, children }: { context: ShellContext; childre
       <WhatsNewDialog initiallyOpen={context.showWhatsNew} />
       {banner ? <BillingBanner banner={banner} canManage={ownerOrAdmin} /> : null}
       <nav className="no-print sticky top-0 z-40 border-b border-navy-100 bg-paper pt-safe-top">
-        <div className="mx-auto flex min-h-[72px] max-w-[1400px] items-center gap-2 px-4 sm:px-6 lg:px-8">
+        <div
+          className={cn(
+            styles.shellRow,
+            "mx-auto flex min-h-[72px] max-w-[1400px] items-center gap-2 px-4 sm:px-6 lg:px-8"
+          )}
+        >
           <Link href="/app" className="mr-1 flex shrink-0 items-center gap-2.5" aria-label="LensWise quote builder">
             <span className="flex h-9 w-9 -rotate-3 items-center justify-center rounded-xl bg-navy-900 text-white shadow-soft">
               <Glasses className="h-5 w-5" aria-hidden="true" />
@@ -70,13 +77,15 @@ export function AppShell({ context, children }: { context: ShellContext; childre
           </Link>
 
           {context.activeLocation ? (
-            <LocationSwitcher
-              locations={context.locations}
-              activeLocationId={context.activeLocation.id}
-            />
+            <div className={styles.desktopLocation}>
+              <LocationSwitcher
+                locations={context.locations}
+                activeLocationId={context.activeLocation.id}
+              />
+            </div>
           ) : null}
 
-          <div className="flex flex-1 items-center gap-1 overflow-x-auto py-2">
+          <div className={cn(styles.desktopNav, "items-center gap-1 overflow-x-auto py-2")}>
             {links
               .filter((l) => l.show)
               .map(({ href, label, icon: Icon }) => {
@@ -100,13 +109,51 @@ export function AppShell({ context, children }: { context: ShellContext; childre
               })}
           </div>
 
-          <AccountMenu
-            fullName={context.fullName}
-            email={context.email}
-            organizationName={context.organizationName}
-            role={context.role}
-            isSuperAdmin={context.isSuperAdmin}
-          />
+          {context.organizationId || context.isSuperAdmin ? (
+            <div className={styles.mobileWorkspaceMenu}>
+              <MobileWorkspaceMenu
+                locations={context.locations}
+                activeLocationId={context.activeLocation?.id ?? null}
+                showSales={Boolean(context.organizationId)}
+                showSettings={ownerOrAdmin}
+                showPlatformAdmin={context.isSuperAdmin}
+              />
+            </div>
+          ) : null}
+
+          <div className={styles.accountMenu}>
+            <AccountMenu
+              fullName={context.fullName}
+              email={context.email}
+              organizationName={context.organizationName}
+              role={context.role}
+              isSuperAdmin={context.isSuperAdmin}
+            />
+          </div>
+
+          <div className={styles.mobilePrimaryNav} aria-label="Primary navigation">
+            {links
+              .filter((link) => link.show && (link.href === "/app" || link.href === "/inventory"))
+              .map(({ href, label, icon: Icon }) => {
+                const active = pathname === href;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex min-h-[44px] min-w-0 items-center justify-center gap-2 rounded-full px-2 text-xs font-bold transition-colors",
+                      active
+                        ? "bg-navy-900 text-white shadow-soft"
+                        : "border border-navy-100 bg-white text-navy-700"
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{label}</span>
+                  </Link>
+                );
+              })}
+          </div>
         </div>
       </nav>
       {children}

@@ -3,21 +3,24 @@
 import { usePathname } from "next/navigation";
 import { MapPin } from "lucide-react";
 import { setActiveLocationAction } from "@/app/(app)/locations/actions";
+import { cn } from "@/lib/utils";
 import type { OrganizationLocation } from "@/lib/locations/types";
 
 export function LocationSwitcher({
   locations,
   activeLocationId,
+  variant = "nav",
 }: {
   locations: OrganizationLocation[];
   activeLocationId: string;
+  variant?: "nav" | "menu";
 }) {
   const pathname = usePathname();
 
   return (
     <form
       action={setActiveLocationAction}
-      className="relative shrink-0"
+      className={cn("relative shrink-0", variant === "menu" && "w-full")}
       aria-label="Choose active location"
     >
       <input type="hidden" name="returnTo" value={pathname} />
@@ -29,7 +32,12 @@ export function LocationSwitcher({
         name="locationId"
         value={activeLocationId}
         onChange={(event) => event.currentTarget.form?.requestSubmit()}
-        className="h-10 max-w-[140px] appearance-none truncate rounded-full border border-teal-200 bg-teal-50 py-1 pl-8 pr-7 text-xs font-bold text-navy-900 outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-100 sm:max-w-[210px]"
+        className={cn(
+          "h-10 appearance-none truncate rounded-full border border-teal-200 bg-teal-50 py-1 pl-8 pr-7 text-xs font-bold text-navy-900 outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-100",
+          variant === "menu"
+            ? "w-full max-w-none"
+            : "max-w-[140px] sm:max-w-[210px]"
+        )}
         aria-label="Active location"
       >
         {locations.map((location) => (
