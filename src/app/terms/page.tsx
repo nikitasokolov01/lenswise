@@ -27,7 +27,7 @@ export default function TermsPage() {
         <p>
           Questions about these terms? Contact{" "}
           <a href="mailto:support@lenswise.app" className="font-medium text-teal-700 hover:underline">
-            support@lenswise.app
+            contact@sokolov.software
           </a>
           .
         </p>
