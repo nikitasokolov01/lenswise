@@ -2,12 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, User, Settings, ShieldCheck, LogOut, Sun, Moon, Monitor } from "lucide-react";
+import {
+  ChevronDown,
+  User,
+  ReceiptText,
+  Settings,
+  ShieldCheck,
+  LogOut,
+  Sun,
+  Moon,
+  Monitor,
+} from "lucide-react";
 import { signOutAction } from "@/app/(auth)/actions";
 import { updateThemePreferenceAction } from "@/app/(app)/account/actions";
+import { LocationSwitcher } from "@/components/shell/LocationSwitcher";
 import { useTheme, type Theme } from "@/components/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
 import type { OrgRole } from "@/lib/auth/permissions";
+import type { OrganizationLocation } from "@/lib/locations/types";
 
 const ROLE_LABEL: Record<OrgRole, string> = { owner: "Owner", admin: "Admin", staff: "Staff" };
 
@@ -16,12 +28,16 @@ export function AccountMenu({
   fullName,
   email,
   organizationName,
+  locations,
+  activeLocationId,
   role,
   isSuperAdmin,
 }: {
   fullName: string | null;
   email: string;
   organizationName: string | null;
+  locations: OrganizationLocation[];
+  activeLocationId: string | null;
   role: OrgRole | null;
   isSuperAdmin: boolean;
 }) {
@@ -75,9 +91,23 @@ export function AccountMenu({
             </p>
           </div>
 
+          {activeLocationId ? (
+            <div role="none" className="border-b border-navy-100 p-3">
+              <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-navy-400">
+                Active location
+              </p>
+              <LocationSwitcher
+                locations={locations}
+                activeLocationId={activeLocationId}
+                variant="menu"
+              />
+            </div>
+          ) : null}
+
           <ThemeToggle />
 
           <MenuLink href="/account" icon={User} label="Account Settings" />
+          {activeLocationId ? <MenuLink href="/sales" icon={ReceiptText} label="Sales" /> : null}
           {role === "owner" || role === "admin" ? (
             <MenuLink href="/settings" icon={Settings} label="Settings" />
           ) : null}

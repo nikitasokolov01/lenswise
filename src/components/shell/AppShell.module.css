@@ -4,12 +4,10 @@
   min-width: 0;
 }
 
-.mobileWorkspaceMenu,
 .mobilePrimaryNav {
   display: none;
 }
 
-.desktopLocation,
 .accountMenu {
   flex-shrink: 0;
 }
@@ -21,14 +19,8 @@
     padding-bottom: 8px;
   }
 
-  .desktopLocation,
   .desktopNav {
     display: none;
-  }
-
-  .mobileWorkspaceMenu {
-    display: block;
-    margin-left: auto;
   }
 
   .mobilePrimaryNav {

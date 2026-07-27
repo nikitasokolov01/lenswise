@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { Boxes, Glasses, ReceiptText, Settings, ShieldCheck } from "lucide-react";
+import { Boxes, Glasses } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PricingRepositoryProvider } from "@/lib/pricing/repositoryContext";
 import { AccountMenu } from "@/components/shell/AccountMenu";
 import { ThemeAccountSync, type Theme } from "@/components/theme/ThemeProvider";
 import { BillingBanner } from "@/components/billing/BillingBanner";
-import { LocationSwitcher } from "@/components/shell/LocationSwitcher";
-import { MobileWorkspaceMenu } from "@/components/shell/MobileWorkspaceMenu";
 import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
 import { billingBanner, type OrgBilling } from "@/lib/billing/status";
@@ -48,9 +46,6 @@ export function AppShell({ context, children }: { context: ShellContext; childre
   const links: { href: string; label: string; icon: typeof Glasses; show: boolean }[] = [
     { href: "/app", label: "Quote Builder", icon: Glasses, show: Boolean(context.organizationId) },
     { href: "/inventory", label: "Frame Inventory", icon: Boxes, show: Boolean(context.organizationId) },
-    { href: "/sales", label: "Sales", icon: ReceiptText, show: Boolean(context.organizationId) },
-    { href: "/settings", label: "Settings", icon: Settings, show: ownerOrAdmin },
-    { href: "/platform-admin", label: "Platform Admin", icon: ShieldCheck, show: context.isSuperAdmin },
   ];
 
   const banner = context.showBillingBanner ? billingBanner(context.billing) : null;
@@ -76,15 +71,6 @@ export function AppShell({ context, children }: { context: ShellContext; childre
             </span>
           </Link>
 
-          {context.activeLocation ? (
-            <div className={styles.desktopLocation}>
-              <LocationSwitcher
-                locations={context.locations}
-                activeLocationId={context.activeLocation.id}
-              />
-            </div>
-          ) : null}
-
           <div className={cn(styles.desktopNav, "items-center gap-1 overflow-x-auto py-2")}>
             {links
               .filter((l) => l.show)
@@ -109,23 +95,13 @@ export function AppShell({ context, children }: { context: ShellContext; childre
               })}
           </div>
 
-          {context.organizationId || context.isSuperAdmin ? (
-            <div className={styles.mobileWorkspaceMenu}>
-              <MobileWorkspaceMenu
-                locations={context.locations}
-                activeLocationId={context.activeLocation?.id ?? null}
-                showSales={Boolean(context.organizationId)}
-                showSettings={ownerOrAdmin}
-                showPlatformAdmin={context.isSuperAdmin}
-              />
-            </div>
-          ) : null}
-
           <div className={styles.accountMenu}>
             <AccountMenu
               fullName={context.fullName}
               email={context.email}
               organizationName={context.organizationName}
+              locations={context.locations}
+              activeLocationId={context.activeLocation?.id ?? null}
               role={context.role}
               isSuperAdmin={context.isSuperAdmin}
             />
