@@ -4,9 +4,22 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "LensWise — Optical Quote Builder",
+  metadataBase: new URL("https://www.uselenswise.com"),
+  applicationName: "LensWise",
+  title: {
+    default: "LensWise — Optical Quote Builder",
+    template: "%s | LensWise",
+  },
   description:
-    "LensWise: a multi-tenant, in-office optical quote builder. No patient-identifying information is collected or stored.",
+    "Build optical quotes, manage frame inventory, track sales, and coordinate multiple locations with LensWise.",
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "LensWise",
+    title: "LensWise — Optical Quote Builder",
+    description:
+      "Build optical quotes, manage frame inventory, track sales, and coordinate multiple locations with LensWise.",
+  },
 };
 
 export const viewport: Viewport = {
