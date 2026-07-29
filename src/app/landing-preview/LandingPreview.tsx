@@ -254,11 +254,16 @@ export function LandingPreview({ isAuthenticated }: { isAuthenticated: boolean }
                 <div className={styles.tableHeading}><span>Frame</span><span>On hand</span><span>Status</span></div>
                 {INVENTORY_ROWS.map((row, index) => (
                   <div key={row.name} className={styles.inventoryRow}>
-                    <FrameGlyph
-                      color={CATALOG_FRAMES[index].color}
-                      accent={CATALOG_FRAMES[index].accent}
-                    />
-                    <span><strong>{row.name}</strong><small>{row.detail}</small></span>
+                    <span className={styles.inventoryFrameGlyph}>
+                      <FrameGlyph
+                        color={CATALOG_FRAMES[index].color}
+                        accent={CATALOG_FRAMES[index].accent}
+                      />
+                    </span>
+                    <span className={styles.inventoryFrameDetails}>
+                      <strong>{row.name}</strong>
+                      <small>{row.detail}</small>
+                    </span>
                     <b>{row.stock}</b>
                     <em className={row.tone === "low" ? styles.lowStock : styles.inStock}>
                       {row.tone === "low" ? "Low stock" : "In stock"}
