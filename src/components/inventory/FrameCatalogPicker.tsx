@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, Library, PackagePlus, Search, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Glasses, Library, PackagePlus, Search, X } from "lucide-react";
 import {
   addCatalogFramesToInventoryAction,
   type FrameInventoryActionState,
@@ -20,6 +21,7 @@ import {
   type FrameCatalogModelGroup,
   type FrameCatalogOption,
 } from "@/lib/catalog/options";
+import { useFramePhotosEnabled } from "@/lib/catalog/framePhotoVisibilityContext";
 import { toggleCatalogVariantSelection } from "@/lib/catalog/selection";
 import { cn } from "@/lib/utils";
 
@@ -388,6 +390,7 @@ function CatalogFrameCard({
   onSelect: () => void;
   onVariantChange: (frameId: string) => void;
 }) {
+  const framePhotosEnabled = useFramePhotosEnabled();
   const details = [frame.material, frame.shape].filter(Boolean).join(" · ");
   const colorKey = (variant: FrameCatalogOption) => variant.colorName.trim().toLowerCase();
   const sizeKey = (variant: FrameCatalogOption) =>
@@ -457,7 +460,24 @@ function CatalogFrameCard({
           frame.alreadyInInventory && "cursor-not-allowed opacity-60"
         )}
       >
-        <div className="flex items-start justify-between gap-2">
+        {framePhotosEnabled ? (
+          <div className="flex h-32 items-center justify-center rounded-lg bg-white px-2">
+            {frame.imageUrl ? (
+              <Image
+                src={frame.imageUrl}
+                unoptimized
+                width={240}
+                height={120}
+                sizes="(min-width: 1280px) 240px, (min-width: 768px) 220px, 80vw"
+                className="h-28 w-full object-contain"
+                alt={`${frame.brand} ${frame.model} in ${frame.colorName}`}
+              />
+            ) : (
+              <Glasses className="h-16 w-16 text-navy-300" strokeWidth={1.4} />
+            )}
+          </div>
+        ) : null}
+        <div className={cn("flex items-start justify-between gap-2", framePhotosEnabled && "mt-3")}>
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold uppercase tracking-wide text-teal-700">
               {frame.brand}

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCents } from "@/lib/money";
+import { useFramePhotosEnabled } from "@/lib/catalog/framePhotoVisibilityContext";
 import {
   formatSalePayment,
   type SaleHistoryRow,
@@ -140,6 +142,7 @@ export function SalesHistory({
   canReverse,
   loadError,
 }: SalesHistoryProps) {
+  const framePhotosEnabled = useFramePhotosEnabled();
   const [reverseTarget, setReverseTarget] = useState<{
     sale: SaleHistoryRow;
     outcome: SaleReversalOutcome;
@@ -201,6 +204,23 @@ export function SalesHistory({
         {sales.map((sale) => (
           <article key={sale.id} className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              {framePhotosEnabled ? (
+                <div className="relative h-24 w-full shrink-0 overflow-hidden rounded-lg bg-navy-50 sm:w-36">
+                  {sale.frameImageUrl ? (
+                    <Image
+                      src={sale.frameImageUrl}
+                      alt={sale.frameName ?? "Sold frame"}
+                      fill
+                      sizes="144px"
+                      className="object-contain p-2"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-navy-300">
+                      <ReceiptText className="h-8 w-8" aria-hidden="true" />
+                    </div>
+                  )}
+                </div>
+              ) : null}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="font-semibold text-navy-950">

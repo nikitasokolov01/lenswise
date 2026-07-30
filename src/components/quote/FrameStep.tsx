@@ -1,13 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState, type Dispatch } from "react";
-import { Check, PackageSearch, Search } from "lucide-react";
+import { Check, Glasses, PackageSearch, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { MoneyField } from "@/components/ui/money-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { catalogColorSwatch } from "@/lib/catalog/options";
+import { useFramePhotosEnabled } from "@/lib/catalog/framePhotoVisibilityContext";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import {
@@ -50,6 +52,7 @@ export function FrameStep({
   frameInventory,
   inventoryLoadError = null,
 }: FrameStepProps) {
+  const framePhotosEnabled = useFramePhotosEnabled();
   const { frame, orderType } = input;
   const [inventorySearch, setInventorySearch] = useState("");
   const [activeVariantIds, setActiveVariantIds] = useState<Record<string, string>>({});
@@ -219,14 +222,33 @@ export function FrameStep({
                         <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
                           Selected inventory frame
                         </p>
-                        <div className="mt-2 min-w-0">
-                          <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="font-semibold text-navy-900">
-                              {formatQuoteFrameName(selectedInventoryFrame)}
-                            </p>
-                            <p className="font-semibold text-navy-900">
-                              {formatCents(frame.retailPriceCents)}
-                            </p>
+                        <div className="mt-2 flex items-center gap-3">
+                          {framePhotosEnabled ? (
+                            <span className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white p-1 ring-1 ring-teal-100">
+                              {selectedInventoryFrame.imageUrl ? (
+                                <Image
+                                  src={selectedInventoryFrame.imageUrl}
+                                  unoptimized
+                                  width={120}
+                                  height={72}
+                                  sizes="80px"
+                                  className="h-full w-full object-contain"
+                                  alt=""
+                                />
+                              ) : (
+                                <Glasses className="h-8 w-8 text-navy-300" aria-hidden="true" />
+                              )}
+                            </span>
+                          ) : null}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <p className="font-semibold text-navy-900">
+                                {formatQuoteFrameName(selectedInventoryFrame)}
+                              </p>
+                              <p className="font-semibold text-navy-900">
+                                {formatCents(frame.retailPriceCents)}
+                              </p>
+                            </div>
                           </div>
                         </div>
                         <p className="mt-1 text-xs text-navy-500">
@@ -385,6 +407,7 @@ function QuoteInventoryModelCard({
   onSelect,
   onVariantChange,
 }: QuoteInventoryModelCardProps) {
+  const framePhotosEnabled = useFramePhotosEnabled();
   const colorKey = (variant: QuoteFrameInventoryOption) =>
     variant.color.trim().toLowerCase();
   const sizeKey = (variant: QuoteFrameInventoryOption) =>
@@ -450,11 +473,35 @@ function QuoteInventoryModelCard({
         aria-pressed={selected}
         onClick={onSelect}
         className={cn(
-          "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-3 text-left",
+          "grid w-full items-center gap-3 p-3 text-left",
+          framePhotosEnabled
+            ? "grid-cols-[72px_minmax(0,1fr)_auto]"
+            : "grid-cols-[minmax(0,1fr)_auto]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-600",
           outOfStock && "cursor-not-allowed opacity-55"
         )}
       >
+        {framePhotosEnabled ? (
+          <span className="flex h-14 w-[72px] items-center justify-center overflow-hidden rounded-md bg-white p-1 ring-1 ring-navy-100">
+            {frame.imageUrl ? (
+              <Image
+                src={frame.imageUrl}
+                unoptimized
+                width={112}
+                height={64}
+                sizes="72px"
+                className="h-full w-full object-contain"
+                alt=""
+              />
+            ) : (
+              <Glasses
+                className="h-8 w-8 text-navy-300"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            )}
+          </span>
+        ) : null}
         <span className="min-w-0">
           <span className="block truncate font-semibold text-navy-900">
             {group.brand} {group.model}

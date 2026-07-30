@@ -19,16 +19,25 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/organization-disabled");
   }
 
-  const locationContext = ctx.organization
-    ? await getOrganizationLocationContext(ctx.organization.id)
-    : { locations: [], activeLocation: null };
   const supabase = createSupabaseServerClient();
-  const { data: changelogRead, error: changelogError } = await supabase
-    .from("user_changelog_reads")
-    .select("release_id")
-    .eq("user_id", ctx.user.id)
-    .eq("release_id", CURRENT_CHANGELOG_RELEASE_ID)
-    .maybeSingle();
+  const [locationContext, changelogResult, framePhotoResult] = await Promise.all([
+    ctx.organization
+      ? getOrganizationLocationContext(ctx.organization.id)
+      : Promise.resolve({ locations: [], activeLocation: null }),
+    supabase
+      .from("user_changelog_reads")
+      .select("release_id")
+      .eq("user_id", ctx.user.id)
+      .eq("release_id", CURRENT_CHANGELOG_RELEASE_ID)
+      .maybeSingle(),
+    ctx.organization
+      ? supabase
+          .from("organization_settings")
+          .select("frame_photos_enabled")
+          .eq("organization_id", ctx.organization.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
   return (
     <AppShell
@@ -45,7 +54,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         themePreference: ctx.themePreference,
         billing: ctx.billing,
         showBillingBanner: true,
-        showWhatsNew: !changelogError && !changelogRead,
+        showWhatsNew: !changelogResult.error && !changelogResult.data,
+        framePhotosEnabled: framePhotoResult.data?.frame_photos_enabled === true,
       }}
     >
       {children}

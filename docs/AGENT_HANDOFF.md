@@ -218,6 +218,8 @@ Inventory/catalog/location/sales migrations:
 - `20260726040118_allow_frame_inventory_delete.sql`
 - `20260726043146_sales_inventory_movements_and_changelog.sql`
 - `20260726043308_sales_inventory_movement_indexes.sql`
+- `20260730210834_organization_frame_photo_visibility.sql`
+- `20260730212020_lock_down_frame_photo_guard_function.sql`
 
 Repository presence does not prove every migration is applied to production.
 Check the linked Supabase project before deployment.

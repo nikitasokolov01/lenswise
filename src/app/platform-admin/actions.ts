@@ -95,6 +95,50 @@ export interface ComplimentaryActionState {
 
 const orgIdSchema = z.string().uuid();
 
+export interface FramePhotoVisibilityActionState {
+  ok?: boolean;
+  error?: string;
+}
+
+const framePhotoVisibilitySchema = z.object({
+  organizationId: z.string().uuid(),
+  enabled: z.enum(["true", "false"]),
+});
+
+/**
+ * Enable or disable licensed frame photos for one organization. This action is
+ * available only to the platform Super Admin; a database trigger separately
+ * prevents organization owners/admins from changing this column.
+ */
+export async function setFramePhotoVisibilityAction(
+  _prev: FramePhotoVisibilityActionState,
+  formData: FormData
+): Promise<FramePhotoVisibilityActionState> {
+  await requireSuperAdmin();
+  const parsed = framePhotoVisibilitySchema.safeParse({
+    organizationId: String(formData.get("organizationId") ?? ""),
+    enabled: String(formData.get("enabled") ?? ""),
+  });
+  if (!parsed.success) return { error: "Invalid frame photo setting." };
+
+  const framePhotosEnabled = parsed.data.enabled === "true";
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase.from("organization_settings").upsert(
+    {
+      organization_id: parsed.data.organizationId,
+      frame_photos_enabled: framePhotosEnabled,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "organization_id" }
+  );
+
+  if (error) return { error: "Could not update frame photos. Please try again." };
+
+  revalidatePath("/", "layout");
+  revalidatePath("/platform-admin");
+  return { ok: true };
+}
+
 async function loadOrgForComplimentary(
   admin: ReturnType<typeof createSupabaseAdminClient>,
   organizationId: string

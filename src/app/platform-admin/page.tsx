@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { RegistrationKeyGenerator } from "@/components/platform/RegistrationKeyGenerator";
 import { OrgStatusButton } from "@/components/platform/OrgStatusButton";
 import { ComplimentaryAccessControl } from "@/components/platform/ComplimentaryAccessControl";
+import { FramePhotoVisibilityControl } from "@/components/platform/FramePhotoVisibilityControl";
 import { revokeRegistrationKeyAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ type BillingRow = {
 };
 type MemberRow = { organization_id: string; user_id: string; role: string };
 type ProfileRow = { id: string; email: string | null; full_name: string | null };
+type SettingsRow = { organization_id: string; frame_photos_enabled: boolean | null };
 
 function keyStatus(k: { revoked: boolean; expires_at: string | null; uses: number; max_uses: number }): string {
   if (k.revoked) return "Revoked";
@@ -62,6 +64,7 @@ export default async function PlatformAdminPage() {
     { data: orgsData, error: orgsError },
     { data: billingData, error: billingError },
     { data: membersData, error: membersError },
+    { data: settingsData, error: settingsError },
   ] = await Promise.all([
     admin.from("organizations").select("id,name,status,created_at").order("created_at", { ascending: false }),
     admin
@@ -70,11 +73,13 @@ export default async function PlatformAdminPage() {
         "organization_id,subscription_status,stripe_customer_id,stripe_subscription_id,trial_end,current_period_end,lifetime_complimentary,lifetime_complimentary_granted_at"
       ),
     admin.from("organization_members").select("organization_id,user_id,role").eq("role", "owner"),
+    admin.from("organization_settings").select("organization_id,frame_photos_enabled"),
   ]);
 
   const organizations = (orgsData ?? []) as OrgRow[];
   const billingRows = (billingData ?? []) as BillingRow[];
   const ownerMembers = (membersData ?? []) as MemberRow[];
+  const settingsRows = (settingsData ?? []) as SettingsRow[];
 
   // One profiles query for the distinct owner user ids (never one-per-org).
   const ownerUserIds = Array.from(new Set(ownerMembers.map((m) => m.user_id)));
@@ -87,6 +92,7 @@ export default async function PlatformAdminPage() {
   if (orgsError) console.error("[platform-admin] Failed to load organizations:", orgsError);
   if (billingError) console.error("[platform-admin] Failed to load billing:", billingError);
   if (membersError) console.error("[platform-admin] Failed to load organization members:", membersError);
+  if (settingsError) console.error("[platform-admin] Failed to load organization settings:", settingsError);
   if (profilesError) console.error("[platform-admin] Failed to load profiles:", profilesError);
 
   // O(1) lookup maps keyed by id.
@@ -96,6 +102,9 @@ export default async function PlatformAdminPage() {
     if (!ownerByOrganization.has(m.organization_id)) ownerByOrganization.set(m.organization_id, m.user_id);
   }
   const profileByUser = new Map<string, ProfileRow>(profiles.map((p) => [p.id, p]));
+  const settingsByOrganization = new Map<string, SettingsRow>(
+    settingsRows.map((settings) => [settings.organization_id, settings])
+  );
 
   const ownerEmailFor = (orgId: string): string => {
     const userId = ownerByOrganization.get(orgId);
@@ -119,7 +128,7 @@ export default async function PlatformAdminPage() {
   // than pretending there are no organizations. Secondary failures degrade
   // gracefully (fields show "—") with a visible warning.
   const orgsFailed = Boolean(orgsError);
-  const secondaryFailed = Boolean(billingError || membersError || profilesError);
+  const secondaryFailed = Boolean(billingError || membersError || profilesError || settingsError);
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -206,12 +215,13 @@ export default async function PlatformAdminPage() {
               </div>
             ) : null}
             <div className="overflow-x-auto">
-              <table className="min-w-[1200px] w-full text-left text-sm">
+              <table className="min-w-[1300px] w-full text-left text-sm">
                 <thead className="border-b border-navy-100 text-xs uppercase text-navy-500">
                   <tr>
                     <th className="py-2 pr-4">Organization</th>
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Owner</th>
+                    <th className="py-2 pr-4">Frame photos</th>
                     <th className="py-2 pr-4">Access</th>
                     <th className="py-2 pr-4">Stripe status</th>
                     <th className="py-2 pr-4">Trial end</th>
@@ -225,7 +235,7 @@ export default async function PlatformAdminPage() {
                 <tbody>
                   {organizations.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="py-3 text-navy-400">
+                      <td colSpan={12} className="py-3 text-navy-400">
                         No organizations yet.
                       </td>
                     </tr>
@@ -234,6 +244,8 @@ export default async function PlatformAdminPage() {
                       const billing = billingByOrganization.get(o.id) ?? null;
                       const complimentary = Boolean(billing?.lifetime_complimentary);
                       const stripeStatus = billing?.subscription_status ?? null;
+                      const framePhotosEnabled =
+                        settingsByOrganization.get(o.id)?.frame_photos_enabled === true;
                       return (
                         <tr key={o.id} className="border-b border-navy-50 align-top">
                           <td className="py-3 pr-4 font-medium text-navy-800">
@@ -244,6 +256,11 @@ export default async function PlatformAdminPage() {
                           </td>
                           <td className="py-3 pr-4">
                             <span className="block max-w-[220px] break-words">{ownerEmailFor(o.id)}</span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Badge variant={framePhotosEnabled ? "teal" : "outline"}>
+                              {framePhotosEnabled ? "Shown" : "Hidden"}
+                            </Badge>
                           </td>
                           <td className="py-3 pr-4">
                             {complimentary ? (
@@ -287,6 +304,11 @@ export default async function PlatformAdminPage() {
                                 organizationId={o.id}
                                 organizationName={o.name}
                                 isComplimentary={complimentary}
+                              />
+                              <FramePhotoVisibilityControl
+                                organizationId={o.id}
+                                organizationName={o.name}
+                                enabled={framePhotosEnabled}
                               />
                             </div>
                           </td>

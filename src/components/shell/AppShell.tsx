@@ -12,6 +12,7 @@ import { BillingBanner } from "@/components/billing/BillingBanner";
 import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
 import { isOwnerOrAdmin, type OrgRole } from "@/lib/auth/permissions";
 import { billingBanner, type OrgBilling } from "@/lib/billing/status";
+import { FramePhotoVisibilityProvider } from "@/lib/catalog/framePhotoVisibilityContext";
 import type { OrganizationLocation } from "@/lib/locations/types";
 import styles from "./AppShell.module.css";
 
@@ -31,6 +32,8 @@ export interface ShellContext {
   /** Suppressed inside Platform Admin so Super Admin sees no billing banner. */
   showBillingBanner: boolean;
   showWhatsNew: boolean;
+  /** Organization-level licensed frame-photo display preference. */
+  framePhotosEnabled: boolean;
 }
 
 /**
@@ -50,7 +53,7 @@ export function AppShell({ context, children }: { context: ShellContext; childre
 
   const banner = context.showBillingBanner ? billingBanner(context.billing) : null;
 
-  const shell = (
+  const shellContents = (
     <div className="min-h-screen">
       <ThemeAccountSync accountTheme={context.themePreference} />
       <WhatsNewDialog initiallyOpen={context.showWhatsNew} />
@@ -134,6 +137,11 @@ export function AppShell({ context, children }: { context: ShellContext; childre
       </nav>
       {children}
     </div>
+  );
+  const shell = (
+    <FramePhotoVisibilityProvider enabled={context.framePhotosEnabled}>
+      {shellContents}
+    </FramePhotoVisibilityProvider>
   );
 
   if (context.organizationId) {

@@ -20,6 +20,7 @@ export default async function PlatformAdminLayout({ children }: { children: Reac
         billing: ctx.billing,
         showBillingBanner: false,
         showWhatsNew: false,
+        framePhotosEnabled: false,
       }}
     >
       {children}
