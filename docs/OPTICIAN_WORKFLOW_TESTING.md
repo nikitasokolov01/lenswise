@@ -22,17 +22,20 @@ Nothing should be pushed until the office has reviewed these flows. Use syntheti
 2. A synthetic image is in `docs/testing/sample-prescription.svg`. Expected values: OD `-2.00 -1.25 × 180 ADD +2.00`; OS `+1.50 -0.75 × 90 ADD +2.25`; total PD `63.5`.
 3. Select **Read prescription**. The first scan downloads the local scanner assets and may take longer; progress and Cancel should work.
 4. Compare every sign and value with the paper. Missing/ambiguous values must be corrected manually. Check the review confirmation, then **Fill prescription fields**. Lens selection must stay locked until **Apply Prescription** is pressed.
-5. Test a deidentified print from your actual MVE layout. Layouts with multiple prescriptions or extra prism columns may require a tighter crop or manual entry. Unsupported prism is not imported. Do not rely on OCR alone for an order.
-6. Close/cancel a scan and confirm no draft was overwritten. Test denied camera permission and Choose photo fallback on your phone.
+5. Test `docs/testing/sample-prescription-extra-columns.svg` with the whole table, including Prism/Base. Expected: OD `-2.00 -1.25 × 180 ADD +2.00`; OS `+1.50 SPH`, blank axis, `ADD +2.25`; total PD `63.5`. The scanner uses column positions so extra columns and blank cells do not shift the optical values. It must warn that prism is not imported.
+6. Test a deidentified print from your actual MVE layout. Multiple prescriptions, unclear signs, and unsupported layouts still need a tighter crop or manual entry. Two disagreeing readings leave the affected value blank. Do not rely on OCR alone for an order.
+7. Close/cancel a scan and confirm no draft was overwritten. Test denied camera permission and Choose photo fallback on your phone.
 
 ## 4. Camera PD estimate
 
 1. In Prescription, select **Camera PD estimate**. Get the subject's agreement before taking a photo.
 2. Follow the instructions for a measured reference at the same depth as the pupils, straight/level head, and distant fixation. A regular photo without calibration cannot produce reliable millimeters.
-3. Capture/select a well-lit image. Choose reference width, then mark both reference endpoints and both pupil centers. Reposition inaccurate marks and use zoom as needed.
+3. Start live camera and check the head/shoulder outline and front/rear camera switch. The outline is only a framing guide, not a distance measurement. Capture/select a well-lit image: pupil-center marks should be suggested automatically. Choose the reference width, mark its two endpoints, and check/reposition both pupil marks. Use zoom as needed. Manual marking remains available if detection fails.
 4. Confirm unusable photos/tilted references show an error. Check the estimate using an optical ruler or pupilometer, then confirm verification and apply.
 5. This fills **one-number total PD** only. It does not measure separate monocular PDs or fitting heights, and it is not a replacement for a professional measurement. Use manual values if the result differs.
 6. Close the window and confirm the camera indicator turns off. LensWise never uploads/saves photos; the device camera/photo app may retain its own copy after native photo capture.
+7. Test a no-face image, multiple faces, closed eyes, and an obviously turned/tilted or blurry face. Confirm a clear explanation appears instead of automatic marks. Close while the model is loading; reopening must not show stale suggestions. Changing marks must reset optical verification.
+8. TrueDepth sensor access is not implemented in this website. It requires a native iOS integration and separate accuracy validation; no sensor-derived or uncalibrated physical PD is claimed. See `docs/CAMERA_PD.md`.
 
 ## 5. Multiple pairs and second-pair promotions
 
@@ -42,7 +45,7 @@ Nothing should be pushed until the office has reviewed these flows. Use syntheti
 4. Select each pair's card. Change a frame, PD, or discount on one pair and verify the other pair stays unchanged. New pairs inherit the last applied session Rx/PD; existing pairs are never silently overwritten.
 5. Try an excessive discount. That pair should stop at `$0`, without reducing another pair's price.
 6. Print Customer Estimate and Internal Worksheet. Both should include every pair and the combined total. Only the worksheet contains Rx/PD, exact frame color/size, and internal notes. Check page breaks on the office printer.
-7. Open Patient View and Copy quote summary. Both should include all pairs. Check portrait phone layout: cards should wrap without horizontal scrolling.
+7. Open Patient View and Copy quote summary. Both should include all pairs. Patient View should show a separate heading/card for each pair, with Frame, Lenses, Coating, Upgrades, and Discounts Applied grouped underneath when present. Each card has its own subtotal and insurance, followed by one combined total. Check portrait phone layout: cards should stack without horizontal scrolling.
 
 ## 6. Payments, inventory, and clearing a visit
 
@@ -57,4 +60,14 @@ Nothing should be pushed until the office has reviewed these flows. Use syntheti
 - Pricing schema is v13; old configurations migrate with no presets and disabled allowance shortcuts. No SQL migration, new API key, AI vendor, or paid OCR service is needed.
 - Prescriptions and PD are held in this tab's memory only. Refresh, location switch, reset, or leaving the quote page clears them; these are not permanently saved patient orders.
 - Self-hosted OCR assets in `public/ocr` total about 15 MB. They are fetched only when scanning, not during ordinary quote entry. One CPU build is selected per device.
+- Self-hosted pupil-marker assets in `public/vision` total about 45 MB. A first photo scan fetches about 17 MB (one WASM variant plus the model and JS); no third-party runtime request or photo upload is needed. Single-image processing runs in a worker, not continuous tracking.
 - Professional verification of scanned prescriptions and camera PD is required. A deidentified MVE print and physical phone-camera test remain part of office acceptance.
+
+## Verified locally in the follow-up
+
+- Actual OCR recognized all optical fields and printed PD from the extra-column synthetic table, including the blank OS axis, and displayed the prism warning.
+- Google's public nonpatient portrait produced two automatic iris-center suggestions; a non-face quote screenshot produced the no-face explanation and no PD value. This proves model startup/marker flow, not physical measurement accuracy.
+- The 4032×3024 synthetic `docs/testing/sample-large-no-face.svg` resized to a 2400×1800 in-memory image, showed the resize explanation, and was rejected as no-face. Ordinary phone photos resize the same way, without changing proportions or uploading them.
+- A two-pair sample showed pair one `$655` retail minus `$100` = `$555`, pair two `$380` minus `50%` = `$190`, combined `$745`. Requested categories appeared under each pair, not repeated pair prefixes. At phone width, page/dialog width equaled scroll width.
+- No sale, inventory change, or Settings save was performed during these follow-up checks. Actual MVE print failures and physical iPhone camera/depth expectations still require office acceptance.
+- Final checks: 276 tests across 30 files, lint/type checks, and the optimized production build passed. Release preview is running on port 3200. Changes remain local until user acceptance and push approval.
