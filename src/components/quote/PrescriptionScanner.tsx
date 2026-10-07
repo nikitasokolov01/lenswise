@@ -11,16 +11,123 @@ import { ADD_OPTIONS, AXIS_OPTIONS, CYLINDER_OPTIONS, SPHERE_OPTIONS } from "@/l
 import {
   parsePrescriptionScan,
   combinePrescriptionScanPasses,
+  findPrescriptionScanRegions,
   reviewedScanPrescription,
   type PrescriptionScanResult,
   type ReviewedPrescriptionScan,
   type ScannedEyeValues,
   type PrescriptionScanWord,
+  type PrescriptionScanRegion,
 } from "@/lib/prescriptionScan";
 import { sanitizePupillaryDistanceValue } from "@/lib/pupillaryDistance";
+import { cleanPrescriptionCellPixels, findPrescriptionCellInkBounds, normalizePrescriptionCellPixels, preparePrescriptionScanImages, type PreparedPrescriptionScanImages } from "@/lib/prescriptionScanImage";
+import { replacePrescriptionCellWords } from "@/lib/prescriptionScanRetry";
 
 interface Crop { left: number; top: number; width: number; height: number }
 const FULL_CROP: Crop = { left: 0, top: 0, width: 1, height: 1 };
+
+function eyeNeedsReading(eye: ScannedEyeValues) {
+  return eye.sphere === null || eye.cylinder === null || (eye.cylinder !== 0 && eye.axis === null);
+}
+
+/** Keep printed headings and an observed eye label together for a focused retry. */
+function focusedEyeCanvas(source: HTMLCanvasElement, header: PrescriptionScanRegion, row: PrescriptionScanRegion): HTMLCanvasElement {
+  const left = Math.max(0, Math.floor(Math.min(header.left, row.left) - 8));
+  const right = Math.min(source.width, Math.ceil(Math.max(header.left + header.width, row.left + row.width) + 8));
+  const areas = [header, row].map((area, index) => {
+    const padding = index === 0 ? 4 : 0;
+    const top = Math.max(0, Math.floor(area.top - padding));
+    const bottom = Math.min(source.height, Math.ceil(area.top + area.height + padding));
+    return { top, height: Math.max(1, bottom - top) };
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = right - left + 24;
+  canvas.height = areas.reduce((sum, area) => sum + area.height, 0) + 36;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Local prescription crop unavailable");
+  context.fillStyle = "white";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  let y = 12;
+  for (const area of areas) {
+    context.drawImage(source, left, area.top, right - left, area.height, 12, y, right - left, area.height);
+    y += area.height + 12;
+  }
+  return canvas;
+}
+
+function focusedCellCanvas(source: HTMLCanvasElement, area: PrescriptionScanRegion) {
+  const left = Math.max(0, Math.floor(area.left));
+  const top = Math.max(0, Math.floor(area.top));
+  const width = Math.min(source.width - left, Math.ceil(area.left + area.width) - left);
+  const height = Math.min(source.height - top, Math.ceil(area.top + area.height) - top);
+  const padding = 12;
+  const canvas = document.createElement("canvas");
+  canvas.width = width + padding * 2;
+  canvas.height = height + padding * 2;
+  const context = canvas.getContext("2d");
+  if (!context || width <= 0 || height <= 0) throw new Error("Local prescription cell unavailable");
+  context.fillStyle = "white";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, left, top, width, height, padding, padding, width, height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  pixels.data.set(cleanPrescriptionCellPixels(pixels.data, canvas.width, canvas.height, { padding }));
+  context.putImageData(pixels, 0, 0);
+  return { canvas, left, top, padding };
+}
+
+/** A second cell reading excludes paper shadows without changing characters. */
+function focusedInkCellCanvas(source: HTMLCanvasElement, area: PrescriptionScanRegion) {
+  const sourceContext = source.getContext("2d");
+  if (!sourceContext) return null;
+  const left = Math.max(0, Math.floor(area.left));
+  const top = Math.max(0, Math.floor(area.top));
+  const width = Math.min(source.width - left, Math.ceil(area.left + area.width) - left);
+  const height = Math.min(source.height - top, Math.ceil(area.top + area.height) - top);
+  if (width <= 0 || height <= 0) return null;
+  const pixels = sourceContext.getImageData(left, top, width, height);
+  const bounds = findPrescriptionCellInkBounds(pixels.data, width, height);
+  if (!bounds) return null;
+  const tight = document.createElement("canvas");
+  const canvas = document.createElement("canvas");
+  try {
+    const padding = 12;
+    tight.width = bounds.width + padding * 2;
+    tight.height = bounds.height + padding * 2;
+    const tightContext = tight.getContext("2d");
+    const context = canvas.getContext("2d");
+    if (!tightContext || !context) throw new Error("Local prescription cell preparation unavailable");
+    const ink = sourceContext.getImageData(left + bounds.left, top + bounds.top, bounds.width, bounds.height);
+    tightContext.fillStyle = "white";
+    tightContext.fillRect(0, 0, tight.width, tight.height);
+    tightContext.putImageData(ink, padding, padding);
+    const paddedInk = tightContext.getImageData(0, 0, tight.width, tight.height);
+    paddedInk.data.set(normalizePrescriptionCellPixels(paddedInk.data, tight.width, tight.height, { sharpen: false }));
+    tightContext.putImageData(paddedInk, 0, 0);
+    // Preserve the actual rounded aspect ratio. Add the white border AFTER
+    // resizing so OCR does not mistake a scaled table rule for a minus sign.
+    const resizedWidth = Math.max(1, Math.round(tight.width * 0.85));
+    const resizedHeight = Math.max(1, Math.round(tight.height * resizedWidth / tight.width));
+    canvas.width = resizedWidth + padding * 2;
+    canvas.height = resizedHeight + padding * 2;
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(tight, padding, padding, resizedWidth, resizedHeight);
+    const scaleX = resizedWidth / tight.width;
+    const scaleY = resizedHeight / tight.height;
+    return {
+      canvas, scaleX, scaleY,
+      left: left + bounds.left - padding - padding / scaleX,
+      top: top + bounds.top - padding - padding / scaleY,
+    };
+  } catch (error) {
+    canvas.width = canvas.height = 0;
+    throw error;
+  } finally {
+    tight.width = tight.height = 0;
+  }
+}
 
 function canvasFromImage(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
   const scale = Math.min(1, 4800 / Math.max(width, height), Math.sqrt(8_000_000 / (width * height)));
@@ -53,6 +160,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
   const worker = useRef<Worker | null>(null);
+  const scanCleanup = useRef<(() => void) | null>(null);
+  const scanAbort = useRef<(() => void) | null>(null);
   const epoch = useRef(0);
   const cropStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -65,6 +174,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 
   function cancelScan() {
     epoch.current += 1;
+    scanAbort.current?.();
+    scanCleanup.current?.();
     void worker.current?.terminate();
     worker.current = null;
     setBusy(false);
@@ -82,6 +193,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 
   useEffect(() => () => {
     epoch.current += 1;
+    scanAbort.current?.();
+    scanCleanup.current?.();
     stream.current?.getTracks().forEach((track) => track.stop());
     void worker.current?.terminate();
   }, []);
@@ -220,17 +333,29 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
     setStatus("Loading the on-device scanner…");
     const scanEpoch = ++epoch.current;
     let scanWorker: Worker | null = null;
-    let cropped: HTMLCanvasElement | null = null;
-    let checkingLayout = false;
+    const preparedImages: PreparedPrescriptionScanImages[] = [];
+    const focusedCanvases: HTMLCanvasElement[] = [];
+    const cleanup = () => {
+      preparedImages.forEach((prepared) => prepared.dispose());
+      focusedCanvases.forEach((canvas) => { canvas.width = 0; canvas.height = 0; });
+    };
+    scanCleanup.current = cleanup;
+    let abort = () => {};
+    const cancelled = new Promise<never>((_, reject) => {
+      abort = () => reject(new Error("Local prescription scan cancelled"));
+    });
+    scanAbort.current = abort;
+    const untilCancelled = <T,>(operation: Promise<T>) => Promise.race([operation, cancelled]);
+    let readingStatus = "Reading prescription values…";
     const timeout = window.setTimeout(() => {
       if (scanEpoch !== epoch.current) return;
       cancelScan();
       setError("The scan took too long. Crop closely around the prescription table and try again.");
     }, 90000);
     try {
-      const { createWorker, OEM, PSM } = await import("tesseract.js");
+      const { createWorker, OEM, PSM } = await untilCancelled(import("tesseract.js"));
       if (scanEpoch !== epoch.current) return;
-      scanWorker = await createWorker("eng", OEM.LSTM_ONLY, {
+      const startingWorker = createWorker("eng", OEM.LSTM_ONLY, {
         workerPath: "/ocr/worker.min.js",
         corePath: "/ocr/core",
         langPath: "/ocr",
@@ -240,43 +365,167 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         logger: (message) => {
           if (scanEpoch !== epoch.current) return;
           const recognizing = message.status === "recognizing text";
-          setStatus(recognizing ? checkingLayout ? "Checking the table with a second reading…" : "Reading prescription values…" : "Preparing the on-device scanner…");
+          setStatus(recognizing ? readingStatus : "Preparing the on-device scanner…");
           setProgress(recognizing ? Math.round(message.progress * 100) : 0);
         },
         errorHandler: () => { /* Do not log worker errors or document content. */ },
-      });
+      }, { load_system_dawg: "0", load_freq_dawg: "0" });
+      // Cancellation during model startup must also terminate a late worker.
+      void startingWorker.then((created) => {
+        if (scanEpoch !== epoch.current) void created.terminate();
+      }, () => {});
+      scanWorker = await untilCancelled(startingWorker);
       if (scanEpoch !== epoch.current) return;
       worker.current = scanWorker;
-      await scanWorker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1", user_defined_dpi: "300" });
-      cropped = document.createElement("canvas");
-      const sourceWidth = Math.max(1, image.width * crop.width);
-      const sourceHeight = Math.max(1, image.height * crop.height);
-      const cropScale = Math.min(2, Math.max(1, 1800 / Math.max(sourceWidth, sourceHeight)),
-        4000 / Math.max(sourceWidth, sourceHeight), Math.sqrt(6_000_000 / (sourceWidth * sourceHeight)));
-      cropped.width = Math.max(1, Math.round(sourceWidth * cropScale));
-      cropped.height = Math.max(1, Math.round(sourceHeight * cropScale));
-      const context = cropped.getContext("2d");
-      if (!context) throw new Error("Canvas unavailable");
-      context.fillStyle = "white";
-      context.fillRect(0, 0, cropped.width, cropped.height);
-      context.filter = "grayscale(1) contrast(1.15)";
-      context.drawImage(image, image.width * crop.left, image.height * crop.top, sourceWidth, sourceHeight, 0, 0, cropped.width, cropped.height);
-      const recognized = await scanWorker.recognize(cropped, {}, { text: true, blocks: true });
+      await untilCancelled(scanWorker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, preserve_interword_spaces: "1", user_defined_dpi: "300" }));
+      const prepared = preparePrescriptionScanImages(image, crop);
+      preparedImages.push(prepared);
+      const recognized = await untilCancelled(scanWorker.recognize(prepared.grayscale, {}, { text: true, blocks: true }));
       if (scanEpoch !== epoch.current) return;
       const wordsFromBlocks = (blocks: typeof recognized.data.blocks): PrescriptionScanWord[] =>
         (blocks ?? []).flatMap((block) => block.paragraphs.flatMap((paragraph) => paragraph.lines.flatMap((line) => line.words)));
-      let parsed = parsePrescriptionScan(recognized.data.text, wordsFromBlocks(recognized.data.blocks));
+      const firstWords = wordsFromBlocks(recognized.data.blocks);
+      let regions = findPrescriptionScanRegions(firstWords);
+      let regionSource = prepared.grayscale;
+      let regionWords = firstWords;
+      let parsed = parsePrescriptionScan(recognized.data.text, firstWords);
       let confidence = recognized.data.confidence;
       if (!parsed.requiresRescan && (!reviewedScanPrescription(parsed) || confidence < 70)) {
-        checkingLayout = true;
+        readingStatus = "Enhancing faint text and checking both eye rows…";
         setProgress(0);
-        setStatus("Checking the table with a second reading…");
-        await scanWorker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-        const retry = await scanWorker.recognize(cropped, {}, { text: true, blocks: true });
+        setStatus(readingStatus);
+        // Remove surrounding sections and enlarge small printed characters
+        // before the alternate reading; never manufacture a missing eye label.
+        const area = regions?.table;
+        const heights = firstWords.filter((word) => !area || word.bbox.y0 >= area.top && word.bbox.y1 <= area.top + area.height)
+          .map((word) => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b);
+        const retryImages = area ? preparePrescriptionScanImages(prepared.grayscale, {
+          left: area.left / prepared.grayscale.width,
+          top: area.top / prepared.grayscale.height,
+          width: Math.min(area.width, prepared.grayscale.width - area.left) / prepared.grayscale.width,
+          height: Math.min(area.height, prepared.grayscale.height - area.top) / prepared.grayscale.height,
+        }, { estimatedWordHeight: heights[Math.floor(heights.length / 2)] }) : prepared;
+        if (retryImages !== prepared) preparedImages.push(retryImages);
+        await untilCancelled(scanWorker.setParameters({ tessedit_pageseg_mode: area ? PSM.AUTO : PSM.SPARSE_TEXT }));
+        const retry = await untilCancelled(scanWorker.recognize(retryImages.getEnhanced(), {}, { text: true, blocks: true }));
         if (scanEpoch !== epoch.current) return;
-        parsed = combinePrescriptionScanPasses(parsed, parsePrescriptionScan(retry.data.text, wordsFromBlocks(retry.data.blocks)));
+        const retryWords = wordsFromBlocks(retry.data.blocks);
+        parsed = combinePrescriptionScanPasses(parsed, parsePrescriptionScan(retry.data.text, retryWords));
+        // Coordinates must always be used with the image they came from.
+        const retryRegions = findPrescriptionScanRegions(retryWords);
+        if (retryRegions) { regions = retryRegions; regionSource = retryImages.grayscale; regionWords = retryWords; }
         confidence = Math.min(confidence, retry.data.confidence);
       }
+      if (!parsed.requiresRescan && regions) {
+        for (const eye of ["od", "os"] as const) {
+          const row = regions.rows[eye];
+          if (!row || !eyeNeedsReading(parsed[eye])) continue;
+          readingStatus = `Checking the ${eye === "od" ? "right (OD)" : "left (OS)"} eye row more closely…`;
+          setStatus(readingStatus);
+          setProgress(0);
+          const focused = focusedEyeCanvas(regionSource, regions.header, row);
+          focusedCanvases.push(focused);
+          const heights = regionWords.filter((word) => word.bbox.y0 >= row.top && word.bbox.y1 <= row.top + row.height)
+            .map((word) => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b);
+          const focusedImages = preparePrescriptionScanImages(focused, FULL_CROP, { estimatedWordHeight: heights[Math.floor(heights.length / 2)] });
+          preparedImages.push(focusedImages);
+          await untilCancelled(scanWorker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK }));
+          const retry = await untilCancelled(scanWorker.recognize(focusedImages.getEnhanced(), {}, { text: true, blocks: true }));
+          if (scanEpoch !== epoch.current) return;
+          const focusedResult = parsePrescriptionScan(retry.data.text, wordsFromBlocks(retry.data.blocks));
+          const otherEye = eye === "od" ? "os" : "od";
+          // A cropped OD row can never supply OS (or vice versa), even if a
+          // later OCR pass misreads the printed label as the opposite eye.
+          if (Object.values(focusedResult[otherEye]).some((value) => value !== null)) {
+            parsed.warnings.push(`${eye.toUpperCase()}: the focused reading could not confirm the eye label. Check this row manually.`);
+          } else {
+            focusedResult.pupillaryDistance = null;
+            focusedResult.warnings = focusedResult.warnings.filter((warning) => !warning.startsWith(`${otherEye.toUpperCase()}:`));
+            parsed = combinePrescriptionScanPasses(parsed, focusedResult);
+          }
+          confidence = Math.min(confidence, retry.data.confidence);
+          focusedImages.dispose();
+          focused.width = 0;
+          focused.height = 0;
+          if (parsed.requiresRescan) break;
+        }
+      }
+      if (!parsed.requiresRescan && regions && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+        // Cell retries retain the original observed table headings/eye labels.
+        // OCR recognizes the printed characters; there is no digit substitution
+        // or assumption that an unlabelled second row belongs to the left eye.
+        let cellWords = [...regionWords];
+        for (const eye of ["od", "os"] as const) {
+          for (const field of ["sphere", "cylinder", "axis"] as const) {
+            if (parsed.requiresRescan || parsed[eye][field] !== null || (field === "axis" && parsed[eye].cylinder === 0)) continue;
+            const area = regions.cells[eye]?.[field];
+            if (!area) continue;
+            await untilCancelled(scanWorker.setParameters({
+              tessedit_pageseg_mode: PSM.SINGLE_LINE,
+              tessedit_char_whitelist: field === "axis" ? "0123456789"
+                : field === "cylinder" ? "+-0123456789.,DSdsPHph" : "+-0123456789.,",
+            }));
+            readingStatus = `Rechecking ${eye.toUpperCase()} ${field}…`;
+            setStatus(readingStatus);
+            setProgress(0);
+            const cell = focusedCellCanvas(regionSource, area);
+            focusedCanvases.push(cell.canvas);
+            const heights = regionWords.filter((word) => word.bbox.y0 >= area.top && word.bbox.y1 <= area.top + area.height)
+              .map((word) => word.bbox.y1 - word.bbox.y0).sort((a, b) => a - b);
+            const cellImages = preparePrescriptionScanImages(cell.canvas, FULL_CROP, {
+              estimatedWordHeight: heights[Math.floor(heights.length / 2)], minimumScale: 1.7,
+            });
+            preparedImages.push(cellImages);
+            const retry = await untilCancelled(scanWorker.recognize(cellImages.grayscale, {}, { text: true, blocks: true }));
+            if (scanEpoch !== epoch.current) return;
+            cellWords = replacePrescriptionCellWords(cellWords, wordsFromBlocks(retry.data.blocks), {
+              area, header: regions.header, left: cell.left, top: cell.top, padding: cell.padding,
+              scaleX: cellImages.grayscale.width / cell.canvas.width,
+              scaleY: cellImages.grayscale.height / cell.canvas.height,
+            });
+            const candidate = parsePrescriptionScan("", cellWords);
+            const otherEye = eye === "od" ? "os" : "od";
+            candidate[otherEye] = { sphere: null, cylinder: null, axis: null, add: null };
+            candidate.warnings = candidate.warnings.filter((warning) => !warning.startsWith(`${otherEye.toUpperCase()}:`));
+            parsed = combinePrescriptionScanPasses(parsed, candidate);
+            confidence = Math.min(confidence, retry.data.confidence);
+            cellImages.dispose();
+            cell.canvas.width = cell.canvas.height = 0;
+            if (!parsed.requiresRescan && parsed[eye][field] === null) {
+              const inkCell = focusedInkCellCanvas(regionSource, area);
+              if (!inkCell) continue;
+              focusedCanvases.push(inkCell.canvas);
+              readingStatus = `Checking faint ${eye.toUpperCase()} ${field} without the table border…`;
+              setStatus(readingStatus);
+              setProgress(0);
+              const inkRetry = await untilCancelled(scanWorker.recognize(inkCell.canvas, {}, { text: true, blocks: true }));
+              if (scanEpoch !== epoch.current) return;
+              cellWords = replacePrescriptionCellWords(cellWords, wordsFromBlocks(inkRetry.data.blocks), {
+                area, header: regions.header, left: inkCell.left, top: inkCell.top, padding: 0,
+                scaleX: inkCell.scaleX, scaleY: inkCell.scaleY,
+              });
+              const inkCandidate = parsePrescriptionScan("", cellWords);
+              inkCandidate[otherEye] = { sphere: null, cylinder: null, axis: null, add: null };
+              inkCandidate.warnings = inkCandidate.warnings.filter((warning) => !warning.startsWith(`${otherEye.toUpperCase()}:`));
+              parsed = combinePrescriptionScanPasses(parsed, inkCandidate);
+              confidence = Math.min(confidence, inkRetry.data.confidence);
+              inkCell.canvas.width = inkCell.canvas.height = 0;
+            }
+          }
+        }
+      }
+      parsed.warnings = parsed.warnings.filter((warning) => {
+        for (const eye of ["od", "os"] as const) {
+          if (!eyeNeedsReading(parsed[eye]) && (warning.startsWith(`${eye.toUpperCase()}: no clear prescription row`)
+            || warning.startsWith(`${eye.toUpperCase()}: this table has extra columns`))) return false;
+          for (const field of ["sphere", "cylinder", "axis", "add"] as const) {
+            if ((parsed[eye][field] !== null || field === "axis" && parsed[eye].cylinder === 0)
+              && (warning.startsWith(`${eye.toUpperCase()}: ${field} contains an unclear`)
+                || warning.startsWith(`${eye.toUpperCase()}: ${field} was difficult to read.`))) return false;
+          }
+        }
+        return true;
+      });
       if (confidence < 70) parsed.warnings.unshift("The photo was difficult to read. Carefully check every value, especially plus/minus signs and axis.");
       setResult(parsed);
       setConfirmed(false);
@@ -285,7 +534,9 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       if (scanEpoch === epoch.current) setError("The scan could not complete. Try a clearer, well-lit photo cropped to the prescription table, or enter the values manually.");
     } finally {
       window.clearTimeout(timeout);
-      if (cropped) { cropped.width = 0; cropped.height = 0; }
+      cleanup();
+      if (scanCleanup.current === cleanup) scanCleanup.current = null;
+      if (scanAbort.current === abort) scanAbort.current = null;
       await scanWorker?.terminate();
       if (worker.current === scanWorker) worker.current = null;
       if (scanEpoch === epoch.current) setBusy(false);

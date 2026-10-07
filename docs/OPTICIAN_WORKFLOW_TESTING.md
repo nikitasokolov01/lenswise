@@ -25,6 +25,9 @@ Nothing should be pushed until the office has reviewed these flows. Use syntheti
 5. Test `docs/testing/sample-prescription-extra-columns.svg` with the whole table, including Prism/Base. Expected: OD `-2.00 -1.25 × 180 ADD +2.00`; OS `+1.50 SPH`, blank axis, `ADD +2.25`; total PD `63.5`. The scanner uses column positions so extra columns and blank cells do not shift the optical values. It must warn that prism is not imported.
 6. Test a deidentified print from your actual MVE layout. Multiple prescriptions, unclear signs, and unsupported layouts still need a tighter crop or manual entry. Two disagreeing readings leave the affected value blank. Do not rely on OCR alone for an order.
 7. Close/cancel a scan and confirm no draft was overwritten. Test denied camera permission and Choose photo fallback on your phone.
+8. Test `docs/testing/sample-prescription-mve-layout.svg` without cropping away its extra sections. Expected OD `-2.00 -0.75 × 105`; OS `+0.50 D.S.` (zero cylinder, no axis); no ADD or PD imported. Repeated OD/OS descriptions and the lower Prism/Dec/Inset table must not create duplicate prescriptions or shift numbers into the Rx. A genuine second optical prescription table must still require a tighter crop.
+9. With a slightly blurred deidentified photo, watch the scanner recheck faint text and individual number cells. No eye is inferred from row order, and no digit is substituted after OCR. Unsupported/conflicting values remain blank, including conflicts seen across more than two readings. Review all signs against the paper even if both rows were read.
+10. Cancel during startup or a number-cell retry, then scan another photo. No late result may overwrite the new scan; closing clears the local processing canvases and stops the worker.
 
 ## 4. Camera PD estimate
 
@@ -71,3 +74,12 @@ Nothing should be pushed until the office has reviewed these flows. Use syntheti
 - A two-pair sample showed pair one `$655` retail minus `$100` = `$555`, pair two `$380` minus `50%` = `$190`, combined `$745`. Requested categories appeared under each pair, not repeated pair prefixes. At phone width, page/dialog width equaled scroll width.
 - No sale, inventory change, or Settings save was performed during these follow-up checks. Actual MVE print failures and physical iPhone camera/depth expectations still require office acceptance.
 - Final checks: 276 tests across 30 files, lint/type checks, and the optimized production build passed. Release preview is running on port 3200. Changes remain local until user acceptance and push approval.
+
+## Printed-Rx recognition follow-up
+
+- The scanner keeps useful original photo resolution, gently improves faint text, and retries an explicitly labelled missing eye or optical cell. A tightly cropped, perceptual-contrast retry can remove interfering paper/grid edges; it is skipped if a faint sign at the boundary could be lost. No patient photo/text is sent to an OCR service.
+- A deidentified crop of the reported MVE failure read both eye rows in the browser, including the missing OS sphere and `D.S.` cylinder. Unprinted ADD/OS axis stayed blank, and unlabeled Far/Near measurements were not imported as PD. The low-confidence and prism warnings remained visible. This is a regression check for one sample, not a guarantee for every blurry photograph.
+- The synthetic MVE-style fixture remains safe to share. The original patient PDF and its identifying full-page render are not repository fixtures; only synthetic data is committed.
+- Contradictory readings and multiple complete values in a cell remain blank across further retries. The scanner never assigns an unlabeled row to an eye, swaps OD/OS, substitutes digits, or silently resolves conflicting signs.
+- Cancel was checked during processing: the scanner returned to the photo controls with no late review result or browser error. Review confirmation is still required before filling; applying the prescription is a separate step.
+- Final checks for this recognition update: 364 tests across 32 files, lint/type checks, and an optimized production build. Keep this release local until the office tests the actual phone-camera flow and approves a push.

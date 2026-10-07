@@ -36,3 +36,6 @@ next-env.d.ts.bak
 
 # licensed frame image mirror (kept locally, never committed)
 /.frame-image-mirror/
+
+# private local document/OCR test inputs and rendered intermediates
+/tmp/

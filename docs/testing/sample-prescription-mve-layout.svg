@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="500" viewBox="0 0 1400 500">
+  <rect width="1400" height="500" fill="white"/>
+  <g fill="#222" font-family="Arial, sans-serif" font-size="24">
+    <text x="30" y="35" font-size="16">SYNTHETIC TEST — no patient information</text>
+    <text x="30" y="80">OD</text><text x="120" y="80">Single Vision — Clear</text>
+    <text x="30" y="120">OS</text><text x="120" y="120">Single Vision — Clear</text>
+    <g font-size="22">
+      <text x="110" y="185">Balance</text><text x="260" y="185">Sphere</text>
+      <text x="420" y="185">Cylinder</text><text x="590" y="185">Axis</text>
+      <text x="710" y="185">Add</text><text x="840" y="185">Seg Ht</text>
+      <text x="1010" y="185">OC Ht</text><text x="1170" y="185">Far</text>
+      <text x="1280" y="185">Near</text>
+    </g>
+    <text x="30" y="235">OD</text><text x="270" y="235">-2.00</text>
+    <text x="440" y="235">-0.75</text><text x="590" y="235">105</text>
+    <text x="1170" y="235">31.0</text><text x="1280" y="235">29.5</text>
+    <text x="30" y="285">OS</text><text x="270" y="285">+0.50</text>
+    <text x="440" y="285">D.S.</text><text x="1170" y="285">32.5</text>
+    <text x="1280" y="285">31.0</text>
+    <text x="30" y="330">OU</text><text x="1170" y="330">63.5</text><text x="1280" y="330">60.5</text>
+    <g font-size="22">
+      <text x="110" y="380">Prism</text><text x="260" y="380">Base</text>
+      <text x="420" y="380">Prism</text><text x="590" y="380">Base</text>
+      <text x="710" y="380">Dec</text><text x="840" y="380">Inset</text>
+      <text x="1010" y="380">Total Dec</text><text x="1170" y="380">BC</text>
+      <text x="1280" y="380">Vertex</text>
+    </g>
+    <text x="30" y="425">OD</text><text x="710" y="425">+1.00</text>
+    <text x="840" y="425">1.25</text><text x="1010" y="425">+2.25</text>
+    <text x="30" y="475">OS</text><text x="710" y="475">+2.50</text>
+    <text x="840" y="475">1.25</text><text x="1010" y="475">+3.75</text>
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combinePrescriptionScanPasses, parsePrescriptionScan, reviewedScanPrescription, type PrescriptionScanWord } from "@/lib/prescriptionScan";
+import { combinePrescriptionScanPasses, findPrescriptionScanRegions, parsePrescriptionScan, reviewedScanPrescription, type PrescriptionScanWord } from "@/lib/prescriptionScan";
 
 const word = (text: string, x: number, y: number, confidence = 95, width = 70): PrescriptionScanWord => ({
   text, confidence, bbox: { x0: x, y0: y, x1: x + width, y1: y + 18 },
@@ -256,5 +256,317 @@ describe("printed prescription scan parsing", () => {
     const result = combinePrescriptionScanPasses(first, second);
     expect(result.requiresRescan).toBe(true);
     expect(reviewedScanPrescription(result)).toBeNull();
+  });
+
+  it("reads widely spaced eye rows beyond the former fixed header-distance cutoff", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 60), word("-2.00", 100, 60), word("-0.50", 200, 60), word("180", 300, 60),
+      word("OS", 0, 450), word("+1.75", 100, 450), word("-0.25", 200, 450), word("35", 300, 450),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis Add Prism Base", words);
+    expect(result.od).toEqual({ sphere: -2, cylinder: -0.5, axis: 180, add: null });
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: -0.25, axis: 35, add: null });
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.rows.os!.top).toBeGreaterThan(400);
+    expect(regions.table.top + regions.table.height).toBeGreaterThan(450);
+    expect(regions.cells.os!.sphere!.top).toBe(regions.rows.os!.top);
+    expect(regions.cells.os!.axis!.top).toBeGreaterThan(400);
+  });
+
+  it("uses a faint explicit OS label but still rejects a faint numeric cell", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 100, 12), word("+1.75", 100, 100), word("-0.25", 200, 100, 20), word("35", 300, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.os.sphere).toBe(1.75);
+    expect(result.os.cylinder).toBeNull();
+    expect(result.os.axis).toBe(35);
+    expect(result.warnings.join(" ")).toContain("eye label was faint");
+    expect(result.warnings.join(" ")).toContain("cylinder was difficult");
+  });
+
+  it.each(["O5", "QS"])("recognizes the gutter-only OS alias %s without changing numeric characters", (label) => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word(label, 0, 100, 25), word("+1.75", 100, 100), word("-0.25", 200, 100), word("35", 300, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.os.sphere).toBe(1.75);
+    expect(result.warnings.join(" ")).toContain("eye label was faint");
+    expect(parsePrescriptionScan(`${label} +1.75 -0.25 35`).os.sphere).toBeNull();
+    const malformedNumber = words.map((entry) => entry.text === "+1.75" ? { ...entry, text: "+1.OO" } : entry);
+    expect(parsePrescriptionScan("Sphere Cylinder Axis", malformedNumber).os.sphere).toBeNull();
+  });
+
+  it("keeps a readable OD without inferring OS from the unlabelled second row", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("+1.75", 100, 100), word("-0.25", 200, 100), word("35", 300, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.od.sphere).toBe(-2);
+    expect(result.os).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.rows.od).toBeDefined();
+    expect(regions.rows.os).toBeUndefined();
+    expect(regions.cells.od!.sphere).toBeDefined();
+    expect(regions.cells.os).toBeUndefined();
+    // A full-table local retry still has the chance to read the missing label.
+    expect(regions.table.top + regions.table.height).toBeGreaterThanOrEqual(118);
+  });
+
+  it("keeps an independently readable OS without demanding a first OD row", () => {
+    const words = [...tableHeadings(),
+      word("OS", 0, 100), word("+1.75", 100, 100), word("D.S.", 200, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.od.sphere).toBeNull();
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.rows.od).toBeUndefined();
+    expect(regions.cells.od).toBeUndefined();
+    expect(regions.cells.os!.sphere).toBeDefined();
+  });
+
+  it("rejects duplicate explicit rows even when the other eye label is missing", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OD", 0, 100), word("-3.00", 100, 100), word("-0.75", 200, 100), word("175", 300, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.requiresRescan).toBe(true);
+    expect(result.od.sphere).toBeNull();
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+  });
+
+  it("reads an MVE optical table but excludes its separate prism/decentration table", () => {
+    // Synthetic values only: the fixture represents printed MVE geometry,
+    // not a patient's prescription or identifying information.
+    const words = [
+      word("Balance", 60, 100, 95, 60), word("Sphere", 150, 100), word("Cylinder", 250, 100), word("Axis", 350, 100),
+      word("Add", 450, 100), word("Seg", 550, 100, 95, 25), word("Ht", 580, 100, 95, 20),
+      word("OC", 650, 100, 95, 25), word("Ht", 680, 100, 95, 20), word("Far", 750, 100), word("Near", 850, 100),
+      word("OD", 0, 150), word("+2.00", 150, 150), word("-0.50", 250, 150), word("035", 350, 150), word("34.0", 750, 150), word("31.5", 850, 150),
+      word("OS", 0, 200), word("+1.75", 150, 200), word("D.S.", 250, 200), word("32.5", 750, 200), word("30.0", 850, 200),
+      word("Prism", 150, 300), word("Base", 250, 300), word("Dec", 450, 300), word("Inset", 550, 300), word("Vertex", 850, 300),
+      word("OD", 0, 350), word("+2.50", 450, 350), word("1.00", 550, 350), word("+3.50", 650, 350),
+      word("OS", 0, 400), word("+3.00", 450, 400), word("1.00", 550, 400), word("+4.00", 650, 400),
+    ];
+    const raw = "OD: Single Vision - CR39 - Clear\nOS: Single Vision - CR39 - Clear\nBalance Sphere Cylinder Axis Add Seg Ht OC Ht Far Near\nOD +2.00 -0.50 035 34.0 31.5\nOS +1.75 D.S. 32.5 30.0\nPrism Base Prism Base Dec Inset Total Dec BC Vertex\nOD +2.50 1.00 +3.50\nOS +3.00 1.00 +4.00";
+    const result = parsePrescriptionScan(raw, words);
+    expect(result.requiresRescan).toBeUndefined();
+    expect(result.od).toEqual({ sphere: 2, cylinder: -0.5, axis: 35, add: null });
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    expect(result.pupillaryDistance).toBeNull();
+    expect(result.warnings.join(" ")).toContain("Prism");
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.header.left).toBe(0);
+    expect(regions.table.top + regions.table.height).toBeLessThan(300);
+    expect(regions.rows.os!.top + regions.rows.os!.height).toBeLessThan(300);
+    for (const eye of ["od", "os"] as const) {
+      for (const cell of Object.values(regions.cells[eye]!)) {
+        expect(cell!.left).toBeGreaterThanOrEqual(regions.table.left);
+        expect(cell!.left + cell!.width).toBeLessThanOrEqual(regions.table.left + regions.table.width);
+        expect(cell!.top + cell!.height).toBeLessThan(300);
+      }
+      expect(Object.keys(regions.cells[eye]!)).toEqual(["sphere", "cylinder", "axis", "add"]);
+    }
+    // Without coordinates the mixed table remains unsafe to flatten.
+    expect(parsePrescriptionScan(raw).od.sphere).toBeNull();
+  });
+
+  it("does not ignore a real second optical table after an auxiliary section", () => {
+    const raw = "Balance Sphere Cylinder Axis Add Far Near\nOD +2.00 -0.50 035 34.0 31.5\nOS +1.75 D.S. 32.5 30.0\nPrism Base Dec Inset\nOD +2.50 1.00 +3.50\nOS +3.00 1.00 +4.00\nBalance Sphere Cylinder Axis Add Far Near\nOD +3.00 -0.50 035 34.0 31.5\nOS +2.75 D.S. 32.5 30.0";
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("+2.00", 100, 50), word("-0.50", 200, 50), word("35", 300, 50),
+      word("OS", 0, 100), word("+1.75", 100, 100), word("D.S.", 200, 100),
+    ];
+    const result = parsePrescriptionScan(raw, words);
+    expect(result.requiresRescan).toBe(true);
+    expect(result.od.sphere).toBeNull();
+    expect(result.os.sphere).toBeNull();
+  });
+
+  it("stops the optical table before a notes section with other labelled numbers", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 100), word("-1.00", 100, 100), word("D.S.", 200, 100),
+      word("Notes:", 0, 200), word("OD", 0, 250), word("+4.00", 100, 250), word("-1.00", 200, 250), word("170", 300, 250),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.od.sphere).toBe(-2);
+    expect(result.requiresRescan).toBeUndefined();
+    expect(findPrescriptionScanRegions(words)!.table.height).toBeLessThan(200);
+  });
+
+  it("keeps value and PD disagreements empty through a third automatic reading", () => {
+    const first = parsePrescriptionScan("OD -2.00 -0.50 180\nOS -1.00 -0.25 90\nPD: 63");
+    const second = parsePrescriptionScan("OD +2.00 -0.50 180\nOS -1.00 -0.25 90\nPD: 64");
+    const third = parsePrescriptionScan("OD -2.00 -0.50 180\nOS -1.00 -0.25 90\nPD: 63");
+    const result = combinePrescriptionScanPasses(combinePrescriptionScanPasses(first, second), third);
+    expect(result.od.sphere).toBeNull();
+    expect(result.od.cylinder).toBe(-0.5);
+    expect(result.pupillaryDistance).toBeNull();
+  });
+
+  it("exports optical cell crops using the same column boundaries without prism cells", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50), word("+2.00", 400, 50),
+      word("OS", 0, 100), word("-1.00", 100, 100), word("D.S.", 200, 100), word("+2.25", 400, 100),
+    ];
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.cells.od!.sphere).toEqual({ left: 64, top: 34, width: 121, height: 50 });
+    expect(regions.cells.od!.cylinder).toEqual({ left: 185, top: 34, width: 100, height: 50 });
+    expect(regions.cells.od!.axis).toEqual({ left: 285, top: 34, width: 100, height: 50 });
+    expect(regions.cells.od!.add).toEqual({ left: 385, top: 34, width: 100, height: 50 });
+    expect(regions.cells.os!.cylinder!.top).toBe(84);
+    expect(regions.cells.od).not.toHaveProperty("prism");
+    expect(regions.cells.od).not.toHaveProperty("base");
+    expect(regions.cells.od!.axis!.top + regions.cells.od!.axis!.height).toBeLessThanOrEqual(regions.cells.os!.axis!.top);
+  });
+
+  it("does not let an inflated Sphere heading box absorb the first numeric row", () => {
+    const box = (text: string, x: number, top: number, bottom: number, width = 90): PrescriptionScanWord => ({
+      text, confidence: 90, bbox: { x0: x, y0: top, x1: x + width, y1: bottom },
+    });
+    const words = [
+      box("Sphere", 100, 141, 225), box("Cylinder", 220, 145, 195), box("Axis", 340, 145, 195), box("Add", 460, 145, 195),
+      box("OD", 0, 211, 259, 50), box("+2.00", 100, 211, 259), box("-0.50", 220, 211, 259), box("35", 340, 211, 259),
+      box("OS", 0, 301, 349, 50), box("+1.75", 100, 301, 349), box("D.S.", 220, 301, 349),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis Add", words);
+    expect(result.od).toEqual({ sphere: 2, cylinder: -0.5, axis: 35, add: null });
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions).not.toBeNull();
+    expect(regions.cells.od!.sphere!.top).toBeLessThan(211);
+    expect(regions.cells.os!.sphere!.height).toBeLessThan(160);
+  });
+
+  it("ignores a tiny low-confidence numeric speck inside the header band", () => {
+    const words = [...tableHeadings(180).map((entry) => ({ ...entry, bbox: { ...entry.bbox, y1: 230 } })),
+      { text: "65", confidence: 11, bbox: { x0: 1512, y0: 226, x1: 1573, y1: 227 } },
+      word("OD", 0, 280), word("+2.00", 100, 280), word("-0.50", 200, 280), word("35", 300, 280),
+      word("OS", 0, 380), word("+1.75", 100, 380), word("D.S.", 200, 380),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis Add Prism Base", words);
+    expect(result.od.sphere).toBe(2);
+    expect(result.os.sphere).toBe(1.75);
+    expect(findPrescriptionScanRegions(words)!.header.width).toBeLessThan(1000);
+  });
+
+  it("still rejects a labelled values row as a spatial table heading", () => {
+    const words = [word("OD", 0, 100), word("Sphere", 100, 100), word("+2.00", 200, 100),
+      word("Cylinder", 300, 100), word("-0.50", 400, 100), word("Axis", 500, 100), word("35", 600, 100),
+    ];
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    expect(parsePrescriptionScan("Sphere Cylinder Axis", words).od.sphere).toBeNull();
+    // Explicit labelled text remains readable, but is not fabricated into
+    // a table or a crop region merely to reuse the spatial retry path.
+    expect(parsePrescriptionScan("OD Sphere +2.00 Cylinder -0.50 Axis 35", words).od.sphere).toBe(2);
+  });
+
+  it("does not compare an unconverted partial plus-cylinder axis with a canonical retry", () => {
+    const first = parsePrescriptionScan("OD Cylinder +0.50 Axis 90\nOS Sphere -1.00 Cylinder -0.25 Axis 35");
+    expect(first.od).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    const second = parsePrescriptionScan("OD Sphere +1.00 Cylinder +0.50 Axis 90\nOS Sphere -1.00 Cylinder -0.25 Axis 35");
+    expect(second.od).toEqual({ sphere: 1.5, cylinder: -0.5, axis: 180, add: null });
+    const result = combinePrescriptionScanPasses(first, second);
+    expect(result.od).toEqual(second.od);
+    expect(result.warnings.join(" ")).not.toContain("two readings disagree");
+    expect(parsePrescriptionScan("OD Sphere +1.00 Cylinder +0.50").od.sphere).toBeNull();
+  });
+
+  it("caps an inflated final eye label by the neighboring explicit row spacing", () => {
+    const box = (text: string, x: number, top: number, bottom: number): PrescriptionScanWord => ({
+      text, confidence: 90, bbox: { x0: x, y0: top, x1: x + 70, y1: bottom },
+    });
+    const words = [box("Sphere", 100, 140, 184), box("Cylinder", 200, 140, 184), box("Axis", 300, 140, 184),
+      box("OD", 0, 184, 224), box("+2.00", 100, 195, 225), box("-0.50", 200, 195, 225), box("35", 300, 195, 225),
+      box("OS", 0, 237, 303), box("+1.75", 100, 275, 299), box("D.S.", 200, 275, 299),
+      box("65.0", 100, 325, 343),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.od.sphere).toBe(2);
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    const cell = findPrescriptionScanRegions(words)!.cells.os!.sphere!;
+    expect(cell.top + cell.height).toBe(304);
+    expect(cell.height).toBeLessThan(100);
+  });
+
+  it("keeps stacked OD/Right and OS/Left aliases associated with their own values", () => {
+    const words = [...tableHeadings(),
+      word("OD", 0, 50), word("Right", 0, 65), word("-2.00", 100, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 130), word("Left", 0, 145), word("+1.75", 100, 130), word("D.S.", 200, 130),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.requiresRescan).toBeUndefined();
+    expect(result.od.sphere).toBe(-2);
+    expect(result.os.sphere).toBe(1.75);
+    expect(findPrescriptionScanRegions(words)!.cells.os).toBeDefined();
+  });
+
+  it("does not clip normal optical glyphs below an upward-shifted final eye label", () => {
+    const box = (text: string, left: number, top: number, right: number, bottom: number, confidence = 90): PrescriptionScanWord => ({
+      text, confidence, bbox: { x0: left, y0: top, x1: right, y1: bottom },
+    });
+    // Synthetic optical values, with regression coordinates representing
+    // an OCR label box that is taller/upward-shifted relative to its row.
+    const words = [
+      box("Balance", 180, 140, 250, 184), box("Sphere", 339, 141, 456, 225),
+      box("Cylinder", 533, 140, 636, 184), box("Axis", 720, 140, 793, 184), box("Add", 900, 140, 970, 184),
+      box("OD", 33, 198, 115, 242), box("+2.00", 339, 206, 456, 251), box("-0.50", 533, 207, 636, 241), box("35", 720, 208, 793, 242),
+      box("OS", 33, 237, 115, 303), box("+1.75", 307, 255, 454, 301, 38), box("D.S.", 534, 266, 607, 302, 91),
+    ];
+    const result = parsePrescriptionScan("Balance Sphere Cylinder Axis Add", words);
+    expect(result.od.sphere).toBe(2);
+    // Low confidence is allowed for geometry, never for numeric acceptance.
+    expect(result.os.sphere).toBeNull();
+    expect(result.os.cylinder).toBe(0);
+    const regions = findPrescriptionScanRegions(words)!;
+    expect(regions.cells.os!.sphere!.top).toBeLessThanOrEqual(255);
+    expect(regions.cells.os!.sphere!.top + regions.cells.os!.sphere!.height).toBeGreaterThanOrEqual(303);
+    expect(regions.cells.os!.cylinder!.top + regions.cells.os!.cylinder!.height).toBeLessThan(312);
+  });
+
+  it.each(["D.S", "D.S.", "D. S", "D. S."])("recognizes explicit spherical cylinder abbreviation %s without requiring a final period", (abbreviation) => {
+    const words = [...tableHeadings(),
+      word("OS", 0, 100), word("+1.75", 100, 100), word(abbreviation, 200, 100, 91),
+    ];
+    expect(parsePrescriptionScan("Sphere Cylinder Axis", words).os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    expect(parsePrescriptionScan(`OS Sphere +1.75 Cylinder ${abbreviation}`).os.cylinder).toBe(0);
+  });
+
+  it.each(["D.S5", "D.S extra", "D.S/2.00", "D.S.x"])("still rejects an unclear spherical abbreviation cell: %s", (cell) => {
+    const words = [...tableHeadings(), word("OS", 0, 100), word("+1.75", 100, 100), word(cell, 200, 100, 91)];
+    expect(parsePrescriptionScan("Sphere Cylinder Axis", words).os.cylinder).toBeNull();
+    expect(parsePrescriptionScan(`OS Sphere +1.75 Cylinder ${cell}`).os.cylinder).toBeNull();
+  });
+
+  it("cannot select one of multiple complete spatial cell values from a cleaner retry", () => {
+    const base = [...tableHeadings(),
+      word("OD", 0, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 100), word("-1.00", 100, 100), word("D.S", 200, 100),
+    ];
+    const first = parsePrescriptionScan("Sphere Cylinder Axis", [...base, word("-2.00", 100, 50, 95, 35), word("-3.00", 145, 50, 95, 35)]);
+    const second = parsePrescriptionScan("Sphere Cylinder Axis", [...base, word("-2.00", 100, 50)]);
+    expect(first.od.sphere).toBeNull();
+    expect(first.warnings.join(" ")).toContain("sphere has duplicate or unclear");
+    expect(second.od.sphere).toBe(-2);
+    expect(combinePrescriptionScanPasses(first, second).od.sphere).toBeNull();
+    expect(combinePrescriptionScanPasses(combinePrescriptionScanPasses(first, second), second).od.sphere).toBeNull();
+  });
+
+  it.each(["-2.OO", "-2.00?"])("still allows a retry of one spatial value with ordinary unclear characters: %s", (text) => {
+    const base = [...tableHeadings(),
+      word("OD", 0, 50), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 100), word("-1.00", 100, 100), word("D.S", 200, 100),
+    ];
+    const first = parsePrescriptionScan("Sphere Cylinder Axis", [...base, word(text, 100, 50)]);
+    const second = parsePrescriptionScan("Sphere Cylinder Axis", [...base, word("-2.00", 100, 50)]);
+    expect(first.od.sphere).toBeNull();
+    expect(first.warnings.join(" ")).not.toContain("sphere has duplicate or unclear");
+    expect(combinePrescriptionScanPasses(first, second).od.sphere).toBe(-2);
   });
 });

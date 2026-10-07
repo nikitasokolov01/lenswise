@@ -34,6 +34,21 @@ export interface PrescriptionScanWord {
   bbox: { x0: number; y0: number; x1: number; y1: number };
 }
 
+export interface PrescriptionScanRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** Coordinates are in OCR-input pixels, not CSS pixels. No text is retained. */
+export interface PrescriptionScanRegions {
+  header: PrescriptionScanRegion;
+  table: PrescriptionScanRegion;
+  rows: Partial<Record<"od" | "os", PrescriptionScanRegion>>;
+  cells: Partial<Record<"od" | "os", Partial<Record<keyof ScannedEyeValues, PrescriptionScanRegion>>>>;
+}
+
 const blankEye = (): ScannedEyeValues => ({ sphere: null, cylinder: null, axis: null, add: null });
 const numericToken = /[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)|\bPLANO\b|\bPL\b|\bDS\b|\bSPH\b/gi;
 const fieldLabels = /\b(SPHERE|SPH|CYLINDER|CYL|AXIS|AX|ADD|PD|PRISM|BASE)\b/gi;
@@ -48,6 +63,8 @@ function normalizeText(text: string): string {
     .replace(/(^|\n)([ \t]*)0([DS])(?=[. \t:|])/gi, "$1$2O$3")
     .replace(/\bR\.[ \t]*E\.?\b/gi, "RIGHT")
     .replace(/\bL\.[ \t]*E\.?\b/gi, "LEFT")
+    // D.S. explicitly means spherical; a blank cylinder still stays blank.
+    .replace(/\bD\.[ \t]*S\.?(?=\s|$|[|,;])/gi, "DS")
     .replace(/([+-])[ \t]+(?=\d|[.,]\d)/g, "$1")
     .replace(/(\d)[ \t]*([.,])[ \t]*(?=\d)/g, "$1$2")
     .replace(/\r/g, "");
@@ -95,6 +112,12 @@ function readSpatialCell(words: PrescriptionScanWord[], eye: string, field: keyo
   const source = normalizeText(ordered.map((word) => word.text).join(" ")).trim()
     .replace(field === "axis" ? /^(?:x|×)\s*|[°º]/gi : /$^/g, "");
   const tokens = source.match(numericToken) ?? [];
+  if (tokens.length > 1) {
+    // A tighter automatic crop may drop one of two printed values. This
+    // definite cell ambiguity stays blank across retries until reviewed.
+    warnings.push(`${eye}: ${field} has duplicate or unclear values. Select it manually from the paper.`);
+    return null;
+  }
   if (tokens.length !== 1 || !/^[\s+\-\d.,]*$|^(PLANO|PL|DS|SPH)$/i.test(source)) {
     warnings.push(`${eye}: ${field} contains an unclear or extra character. Select it manually.`);
     return null;
@@ -110,70 +133,221 @@ function readSpatialCell(words: PrescriptionScanWord[], eye: string, field: keyo
   return value;
 }
 
-/** Align values by printed columns instead of flattening blank cells away. */
-function spatialRows(words: PrescriptionScanWord[], warnings: string[]): {
-  rows: Record<"od" | "os", ScannedEyeValues[]>; hasTable: boolean; ambiguous: boolean;
+function isOpticalHeader(text: string): boolean {
+  return /\b(?:SPHERE|SPH)\b/i.test(text) && /\b(?:CYLINDER|CYL)\b/i.test(text) && /\b(?:AXIS|AX)\b/i.test(text);
+}
+
+function isAuxiliaryHeader(text: string): boolean {
+  if (/\b(?:SPHERE|SPH|CYLINDER|CYL|AXIS|AX|ADD)\b/i.test(text) || /\d/.test(text)) return false;
+  const terms = text.toUpperCase().match(/\b(?:PRISM|BASE|DEC|DECENTRATION|INSET|BC|VERTEX)\b/g) ?? [];
+  return new Set(terms).size >= 2;
+}
+
+function tableWordEye(text: string): "od" | "os" | null {
+  const eye = wordEye(text);
+  if (eye) return eye;
+  // Only used in the eye-label gutter of a confirmed optical table.
+  // Never substitute these characters inside a numeric prescription cell.
+  return /^(?:O5|QS)[.:]?$/i.test(text.trim()) ? "os" : null;
+}
+
+interface SpatialEyeGroup {
+  eye: "od" | "os";
+  labels: PrescriptionScanWord[];
+  y: number;
+  top: number;
+  bottom: number;
+}
+
+interface SpatialTableLayout {
+  headerWords: PrescriptionScanWord[];
+  opticalHeaders: PrescriptionScanWord[];
+  headerHeight: number;
+  headerBottom: number;
+  boundary: number;
+  groups: SpatialEyeGroup[];
+}
+
+function columnBounds(layout: SpatialTableLayout, heading: PrescriptionScanWord): { left: number; right: number } {
+  const index = layout.headerWords.indexOf(heading);
+  return {
+    left: index > 0 ? (wordX(layout.headerWords[index - 1]) + wordX(heading)) / 2 : heading.bbox.x0 - wordHeight(heading) * 2,
+    right: layout.headerWords[index + 1] ? (wordX(heading) + wordX(layout.headerWords[index + 1])) / 2 : heading.bbox.x1 + wordHeight(heading) * 2,
+  };
+}
+
+/** Geometry recognizes explicit labels, not an assumed first/right row order. */
+function spatialLayouts(words: PrescriptionScanWord[]): {
+  usable: PrescriptionScanWord[]; layouts: SpatialTableLayout[]; ambiguous: boolean;
 } {
-  const rows: Record<"od" | "os", ScannedEyeValues[]> = { od: [], os: [] };
-  let tables = 0;
-  let ambiguous = false;
   const usable = words.filter((word) => word.text.trim() && Object.values(word.bbox).every(Number.isFinite)
     && word.bbox.x1 > word.bbox.x0 && word.bbox.y1 > word.bbox.y0);
-  const anchors = usable.filter((word) => wordColumnName(word.text) === "sphere" && (word.confidence ?? 100) >= 45);
+  const sameBand = (anchor: PrescriptionScanWord) => usable.filter((word) =>
+    Math.abs(wordY(word) - wordY(anchor)) <= Math.max(wordHeight(word), wordHeight(anchor)) * 0.7)
+    .sort((a, b) => wordX(a) - wordX(b));
+  const anchors = usable.filter((word) => wordColumnName(word.text) === "sphere" && (word.confidence ?? 100) >= 30);
+  const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const usedHeaders = new Set<PrescriptionScanWord>();
-
+  const layouts: SpatialTableLayout[] = [];
   for (const anchor of anchors) {
     if (usedHeaders.has(anchor)) continue;
-    const headerWords = usable.filter((word) => Math.abs(wordY(word) - wordY(anchor)) <= Math.max(wordHeight(word), wordHeight(anchor)) * 0.7)
+    const candidates = sameBand(anchor).filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 30);
+    const nearest = (field: keyof ScannedEyeValues, afterX: number) => candidates.filter((word) => wordColumnName(word.text) === field && wordX(word) > afterX)
+      .sort((a, b) => Math.abs(wordY(a) - wordY(anchor)) - Math.abs(wordY(b) - wordY(anchor)))[0];
+    const cylinder = nearest("cylinder", wordX(anchor));
+    const axis = cylinder && nearest("axis", wordX(cylinder));
+    if (!cylinder || !axis) continue;
+    const core = [anchor, cylinder, axis];
+    const headerCenter = median(core.map(wordY));
+    const headerHeight = median(core.map(wordHeight));
+    const isNumericArtifact = (word: PrescriptionScanWord) => /^[+\-\d.,]+$/.test(normalizeText(word.text).trim())
+      && ((word.confidence ?? 100) < 30 || wordHeight(word) < headerHeight * 0.25);
+    // One inflated word box must not drag the values row into the heading
+    // band. Tiny/low-confidence numeric specks are not printed headings.
+    const headerWords = usable.filter((word) => Math.abs(wordY(word) - headerCenter)
+      <= Math.max(headerHeight, Math.min(wordHeight(word), headerHeight * 1.5)) * 0.6 && !isNumericArtifact(word))
       .sort((a, b) => wordX(a) - wordX(b));
-    const opticalHeaders = headerWords.filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 45);
+    const opticalHeaders = headerWords.filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 30);
     const fields = opticalHeaders.map((word) => wordColumnName(word.text));
     if (!["sphere", "cylinder", "axis"].every((field) => fields.includes(field as keyof ScannedEyeValues))
-      || new Set(fields).size !== fields.length) continue;
+      || new Set(fields).size !== fields.length
+      // A labelled values row is not a second table heading.
+      || headerWords.some((word) => wordEye(word.text) || /^[+\-\d.,]+$/.test(normalizeText(word.text).trim()))) continue;
     opticalHeaders.forEach((word) => usedHeaders.add(word));
-    const firstX = Math.min(...opticalHeaders.map(wordX));
-    const headerBottom = Math.max(...headerWords.map((word) => word.bbox.y1));
-    // Restrict the search to the table immediately below these headings.
-    const maximumRowY = headerBottom + Math.max(wordHeight(anchor) * 12, 180);
-    const labels = usable.filter((word) => wordEye(word.text) && wordY(word) > headerBottom && wordY(word) < maximumRowY
-      && wordX(word) < firstX && (word.confidence ?? 100) >= 40).sort((a, b) => wordY(a) - wordY(b));
-    const groups: { eye: "od" | "os"; labels: PrescriptionScanWord[]; y: number }[] = [];
+    layouts.push({
+      headerWords, opticalHeaders, headerHeight,
+      headerBottom: Math.min(Math.max(...headerWords.map((word) => word.bbox.y1)), headerCenter + headerHeight * 0.65),
+      boundary: Number.POSITIVE_INFINITY, groups: [],
+    });
+  }
+
+  const auxiliaryTops = usable.filter((word) => /\b(?:PRISM|BASE|DEC|INSET|BC|VERTEX)\b/i.test(word.text))
+    .map((anchor) => sameBand(anchor)).filter((band) => isAuxiliaryHeader(band.map((word) => word.text).join(" ")))
+    .map((band) => Math.min(...band.map((word) => word.bbox.y0)));
+  const sectionTops = usable.filter((word) => /^(?:NOTES?|INSTRUCTIONS?|COMMENTS?|SAMPLE|ASSESSMENT|DIAGNOSIS|SIGNATURE)[.:]?$/i.test(word.text.trim()))
+    .map((word) => word.bbox.y0);
+  let ambiguous = layouts.length > 1;
+  for (const layout of layouts) {
+    const nextTops = [...layouts.filter((other) => other !== layout).map((other) => Math.min(...other.headerWords.map((word) => word.bbox.y0))), ...auxiliaryTops, ...sectionTops]
+      .filter((top) => top > layout.headerBottom);
+    layout.boundary = Math.min(...nextTops, Number.POSITIVE_INFINITY);
+    const firstX = Math.min(...layout.opticalHeaders.map(wordX));
+    const labels = usable.filter((word) => tableWordEye(word.text) && wordY(word) > layout.headerBottom && wordY(word) < layout.boundary
+      && wordX(word) < firstX).sort((a, b) => wordY(a) - wordY(b));
+    const groups: SpatialEyeGroup[] = [];
     for (const label of labels) {
-      const eye = wordEye(label.text)!;
+      const eye = tableWordEye(label.text)!;
       const previous = groups.find((group) => group.eye === eye && Math.abs(group.y - wordY(label)) <= wordHeight(label)
         * (group.labels.some((item) => item.text.replace(/\W/g, "").toUpperCase() === label.text.replace(/\W/g, "").toUpperCase()) ? 0.6 : 1.5)
         && Math.abs(wordX(group.labels[0]) - wordX(label)) < wordHeight(label) * 4);
       if (previous) {
         previous.labels.push(label);
         previous.y = previous.labels.reduce((sum, word) => sum + wordY(word), 0) / previous.labels.length;
-      } else groups.push({ eye, labels: [label], y: wordY(label) });
+      } else groups.push({ eye, labels: [label], y: wordY(label), top: 0, bottom: 0 });
     }
     groups.sort((a, b) => a.y - b.y);
-    if (!groups.some((group) => group.eye === "od") || !groups.some((group) => group.eye === "os")) continue;
-    tables += 1;
-    if (groups.length !== 2) {
-      ambiguous = true;
-      continue;
+    for (let index = 0; index < groups.length; index++) {
+      const group = groups[index];
+      const rowHeight = Math.max(...group.labels.map(wordHeight), layout.headerHeight);
+      const previous = groups[index - 1];
+      const next = groups[index + 1];
+      // Mirror the neighboring observed row spacing at the outside edges.
+      // An oversized last-eye label must not extend the crop into a blank
+      // OU/measurement row or the next table's rule. No eye is inferred.
+      const topSpacing = previous ? (previous.y + group.y) / 2 : next ? group.y - (next.y - group.y) / 2 : 0;
+      const bottomSpacing = next ? (group.y + next.y) / 2 : previous ? group.y + (group.y - previous.y) / 2 : Number.POSITIVE_INFINITY;
+      group.top = Math.max(layout.headerBottom, group.y - rowHeight * 1.5, topSpacing);
+      group.bottom = Math.min(layout.boundary, group.y + rowHeight * 1.5, bottomSpacing);
+      const opticalGeometry = usable.filter((word) => wordY(word) > group.top && wordY(word) < group.bottom
+        && !tableWordEye(word.text) && wordHeight(word) >= layout.headerHeight * 0.4 && wordHeight(word) <= layout.headerHeight * 1.5
+        && layout.opticalHeaders.some((heading) => {
+          const { left, right } = columnBounds(layout, heading);
+          return wordX(word) > left && wordX(word) < right;
+        }));
+      // A label box can be shifted upward relative to its printed values.
+      // Keep the full normal-sized glyphs already associated with this row
+      // inside outside-edge crops. Their text/confidence affects recognition,
+      // never this geometry; neighboring-row midpoints stay hard boundaries.
+      if (opticalGeometry.length) {
+        const margin = layout.headerHeight * 0.1;
+        if (!previous) group.top = Math.max(layout.headerBottom, Math.min(group.top, ...opticalGeometry.map((word) => word.bbox.y0 - margin)));
+        if (!next) group.bottom = Math.min(layout.boundary, Math.max(group.bottom, ...opticalGeometry.map((word) => word.bbox.y1 + margin)));
+      }
+      const hasValues = layout.opticalHeaders.some((heading) => {
+        const { left, right } = columnBounds(layout, heading);
+        return usable.some((word) => wordY(word) > group.top && wordY(word) < group.bottom && wordX(word) > left && wordX(word) < right
+          && !group.labels.includes(word) && Boolean(normalizeText(word.text).match(numericToken)?.length));
+      });
+      if (hasValues) layout.groups.push(group);
     }
-    for (let rowIndex = 0; rowIndex < groups.length; rowIndex++) {
-      const group = groups[rowIndex];
-      const rowHeight = Math.max(...group.labels.map(wordHeight), wordHeight(anchor));
-      const top = Math.max(headerBottom, group.y - rowHeight * 1.5, rowIndex > 0 ? (groups[rowIndex - 1].y + group.y) / 2 : 0);
-      const bottom = Math.min(group.y + rowHeight * 1.5, groups[rowIndex + 1] ? (group.y + groups[rowIndex + 1].y) / 2 : Number.POSITIVE_INFINITY);
+    if (layout.groups.filter((group) => group.eye === "od").length > 1 || layout.groups.filter((group) => group.eye === "os").length > 1) ambiguous = true;
+  }
+  return { usable, layouts, ambiguous };
+}
+
+/** Align values by printed columns instead of flattening blank cells away. */
+function spatialRows(words: PrescriptionScanWord[], warnings: string[]): {
+  rows: Record<"od" | "os", ScannedEyeValues[]>; hasTable: boolean; ambiguous: boolean;
+} {
+  const { usable, layouts, ambiguous } = spatialLayouts(words);
+  const rows: Record<"od" | "os", ScannedEyeValues[]> = { od: [], os: [] };
+  if (!ambiguous) for (const layout of layouts) {
+    for (const group of layout.groups) {
+      if (group.labels.some((label) => (label.confidence ?? 100) < 40 || !wordEye(label.text))) {
+        warnings.push(`${group.eye.toUpperCase()}: the eye label was faint. Confirm right/left against the paper.`);
+      }
       const values = blankEye();
-      for (const heading of opticalHeaders) {
+      for (const heading of layout.opticalHeaders) {
         const field = wordColumnName(heading.text)!;
-        const index = headerWords.indexOf(heading);
-        const left = index > 0 ? (wordX(headerWords[index - 1]) + wordX(heading)) / 2 : heading.bbox.x0 - wordHeight(heading) * 2;
-        const right = headerWords[index + 1] ? (wordX(heading) + wordX(headerWords[index + 1])) / 2 : heading.bbox.x1 + wordHeight(heading) * 2;
-        const cell = usable.filter((word) => wordY(word) > top && wordY(word) < bottom && wordX(word) > left && wordX(word) < right
+        const { left, right } = columnBounds(layout, heading);
+        const cell = usable.filter((word) => wordY(word) > group.top && wordY(word) < group.bottom && wordX(word) > left && wordX(word) < right
           && !group.labels.includes(word));
         values[field] = readSpatialCell(cell, group.eye.toUpperCase(), field, warnings);
       }
       rows[group.eye].push(values);
     }
   }
-  return { rows, hasTable: tables > 0, ambiguous: ambiguous || tables > 1 };
+  return { rows, hasTable: layouts.some((layout) => layout.groups.length > 0), ambiguous };
+}
+
+/** Local retry crops include only a uniquely identified optical table section. */
+export function findPrescriptionScanRegions(words: PrescriptionScanWord[]): PrescriptionScanRegions | null {
+  const { usable, layouts, ambiguous } = spatialLayouts(words);
+  if (ambiguous || layouts.length !== 1 || !layouts[0].groups.length) return null;
+  const layout = layouts[0];
+  const labelWords = layout.groups.flatMap((group) => group.labels);
+  const left = Math.max(0, Math.floor(Math.min(...layout.headerWords.map((word) => word.bbox.x0), ...labelWords.map((word) => word.bbox.x0))));
+  const right = Math.ceil(Math.max(...layout.headerWords.map((word) => word.bbox.x1)));
+  const top = Math.max(0, Math.floor(Math.min(...layout.headerWords.map((word) => word.bbox.y0))));
+  const headerBottom = Math.ceil(layout.headerBottom);
+  // Include unlabelled value rows for a table-level retry, but never guess
+  // their eye. A later recognized auxiliary/notes section is a hard stop.
+  const values = usable.filter((word) => wordY(word) > layout.headerBottom && wordY(word) < layout.boundary && wordX(word) > left && wordX(word) < right
+    && Boolean(normalizeText(word.text).match(numericToken)?.length));
+  const bottom = Math.ceil(Math.min(layout.boundary, Math.max(...values.map((word) => word.bbox.y1), ...layout.groups.map((group) => group.bottom))));
+  const rows: PrescriptionScanRegions["rows"] = {};
+  const cells: PrescriptionScanRegions["cells"] = {};
+  for (const group of layout.groups) {
+    const rowTop = Math.floor(group.top);
+    rows[group.eye] = { left, top: rowTop, width: right - left, height: Math.ceil(group.bottom) - rowTop };
+    const eyeCells: NonNullable<PrescriptionScanRegions["cells"]["od"]> = {};
+    for (const heading of layout.opticalHeaders) {
+      const bounds = columnBounds(layout, heading);
+      const cellLeft = Math.max(left, Math.floor(bounds.left));
+      const cellRight = Math.min(right, Math.ceil(bounds.right));
+      if (cellRight > cellLeft) {
+        eyeCells[wordColumnName(heading.text)!] = {
+          left: cellLeft, top: rowTop, width: cellRight - cellLeft, height: Math.ceil(group.bottom) - rowTop,
+        };
+      }
+    }
+    cells[group.eye] = eyeCells;
+  }
+  return {
+    header: { left, top, width: right - left, height: headerBottom - top },
+    table: { left, top, width: right - left, height: bottom - top },
+    rows, cells,
+  };
 }
 
 function parseEyeRow(row: string, columns: string[], warnings: string[], name: string): ScannedEyeValues {
@@ -243,7 +417,12 @@ function validateEye(eye: ScannedEyeValues, name: string, warnings: string[]): S
       next.axis = next.axis > 90 ? next.axis - 90 : next.axis + 90;
       warnings.push(`${name}: plus cylinder was converted to equivalent minus-cylinder notation. Check the converted values.`);
     } else {
+      // Until plus-cylinder transposition is possible, none of this eye's
+      // power/axis fields are in the canonical minus-cylinder notation.
+      // Do not compare an unconverted axis against a later complete retry.
+      next.sphere = null;
       next.cylinder = null;
+      next.axis = null;
       warnings.push(`${name}: plus cylinder could not be converted. Enter a complete minus-cylinder prescription manually.`);
     }
   }
@@ -307,11 +486,30 @@ export function parsePrescriptionScan(rawText: string, words: PrescriptionScanWo
   const credibleRawRows = { od: 0, os: 0 };
   let rawTableHeadings = 0;
   let columns: string[] = [];
+  let auxiliarySection = false;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
+    if (isOpticalHeader(line)) {
+      auxiliarySection = false;
+      if (!/\d/.test(line)) {
+        // Keep extra MVE columns visible to the positional parser, which
+        // must not flatten blanks and accidentally import Far/Near/height.
+        columns = line.match(/\b(?:SPHERE|SPH|CYLINDER|CYL|AXIS|AX|ADD|PD|PRISM|BASE|BALANCE|SEG\s*HT|OC\s*HT|FAR|NEAR)\b/gi) ?? [];
+        rawTableHeadings += 1;
+        continue;
+      }
+    }
+    if (isAuxiliaryHeader(line)) {
+      auxiliarySection = true;
+      columns = [];
+      continue;
+    }
     const rowMatch = line.match(eyeRowPattern);
     if (rowMatch) {
+      // MVE prints another OD/OS pair below the optical table for prism,
+      // decentration, inset, etc. Those values are not another spectacle Rx.
+      if (auxiliarySection) continue;
       const eye = /^(OD|RIGHT|R)$/i.test(rowMatch[1].replace(/\s+EYE$/i, "")) ? "od" : "os";
       const followingLine = lines[index + 1] ?? "";
       const clearContinuation = !eyeRowPattern.test(followingLine) && (
@@ -339,13 +537,6 @@ export function parsePrescriptionScan(rawText: string, words: PrescriptionScanWo
       }
       continue;
     }
-    const labels = [...line.matchAll(fieldLabels)].map((match) => match[0].toUpperCase());
-    if (!/\d/.test(line) && (labels.includes("SPH") || labels.includes("SPHERE"))) {
-      if (labels.some((label) => /^CYL/.test(label)) && labels.some((label) => /^AX/.test(label))) {
-        columns = labels;
-        if (!line.replace(fieldLabels, "").replace(/[\s|:/.,()\-]/g, "")) rawTableHeadings += 1;
-      }
-    }
   }
 
   const spatial = spatialRows(words, warnings);
@@ -358,7 +549,10 @@ export function parsePrescriptionScan(rawText: string, words: PrescriptionScanWo
       warnings.push(`${name}: multiple prescriptions or eye rows were found. Crop to one prescription and scan again.`);
       return blankEye();
     }
-    const eyeRows = spatial.hasTable ? spatial.rows[eye] : rows[eye];
+    // A readable OD row does not require a readable OS label (or vice
+    // versa). A missing eye may use its own explicit text row, never the
+    // other eye's geometry or an assumed top/bottom ordering.
+    const eyeRows = spatial.rows[eye].length ? spatial.rows[eye] : rows[eye];
     if (eyeRows.length > 1 || rows[eye].length > 1) {
       warnings.push(`${name}: multiple prescriptions were found. Crop to one prescription and scan again, or enter this eye manually.`);
       return blankEye();
@@ -394,7 +588,8 @@ export function combinePrescriptionScanPasses(first: PrescriptionScanResult, sec
     for (const field of ["sphere", "cylinder", "axis", "add"] as const) {
       const a = first[eye][field];
       const b = second[eye][field];
-      if (warnings.some((warning) => warning.startsWith(`${eye.toUpperCase()}: ${field} has duplicate or unclear`))) {
+      if (warnings.some((warning) => warning.startsWith(`${eye.toUpperCase()}: ${field} has duplicate or unclear`)
+        || warning.startsWith(`${eye.toUpperCase()}: two readings disagree on ${field}.`))) {
         merged[field] = null;
       } else if (a !== null && b !== null && a !== b) {
         warnings.push(`${eye.toUpperCase()}: two readings disagree on ${field}. Select it manually from the paper.`);
@@ -404,7 +599,7 @@ export function combinePrescriptionScanPasses(first: PrescriptionScanResult, sec
     if (merged.cylinder === 0) merged.axis = null;
     return merged;
   };
-  let pd = first.pupillaryDistance ?? second.pupillaryDistance;
+  let pd = warnings.some((warning) => warning.startsWith("Two readings disagree on PD.")) ? null : first.pupillaryDistance ?? second.pupillaryDistance;
   if (first.pupillaryDistance && second.pupillaryDistance && JSON.stringify(first.pupillaryDistance) !== JSON.stringify(second.pupillaryDistance)) {
     pd = null;
     warnings.push("Two readings disagree on PD. Enter it manually from the paper.");
