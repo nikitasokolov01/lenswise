@@ -5,7 +5,7 @@ import { usePricingConfiguration } from "@/lib/pricing/usePricingConfiguration";
 import { calculateQuote } from "@/lib/calculation/calculateQuote";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 import { createQuoteSession, quoteSessionReducer } from "@/components/quote/quoteSessionReducer";
-import { calculateQuoteSession, combineQuoteResults } from "@/lib/calculation/quoteSession";
+import { calculateQuoteSession } from "@/lib/calculation/quoteSession";
 import { QuoteSessionOverview } from "@/components/quote/QuoteSessionOverview";
 import { QuoteSessionPrint } from "@/components/quote/QuoteSessionPrint";
 import { Button } from "@/components/ui/button";
@@ -267,7 +267,12 @@ function QuoteBuilderReady({
   // inline in JSX — and is memoized so it only re-runs when inputs change.
   const result = useMemo(() => calculateQuote(input, config), [input, config]);
   const sessionResult = useMemo(() => calculateQuoteSession(session.pairs, config), [session.pairs, config]);
-  const combinedResult = useMemo(() => combineQuoteResults(sessionResult.pairs), [sessionResult.pairs]);
+  const patientPairs = useMemo(() => sessionResult.pairs.map((pair) => ({
+    id: pair.id,
+    label: pair.label,
+    result: pair.result,
+    usage: pair.input.usage,
+  })), [sessionResult.pairs]);
   const activePairLabel = sessionResult.pairs.find((pair) => pair.id === activePair.id)!.label;
 
   const preOverrideEstimateCents = useMemo(() => {
@@ -558,7 +563,7 @@ function QuoteBuilderReady({
       ) : null}
 
       {patientViewOpen ? (
-        <PatientView result={session.pairs.length > 1 ? combinedResult : result} config={config} usage={session.pairs.length > 1 ? null : input.usage} onClose={() => setPatientViewOpen(false)} />
+        <PatientView result={result} pairs={patientPairs} config={config} usage={input.usage} onClose={() => setPatientViewOpen(false)} />
       ) : null}
     </div>
   );
