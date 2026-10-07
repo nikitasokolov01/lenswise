@@ -108,4 +108,19 @@ describe("privacy-safe prescription scan diagnostics", () => {
     prescriptionScanDiagnostics(data);
     expect(JSON.stringify(data)).toBe(before);
   });
+
+  it("keeps table fallback metadata bounded and excludes unrecognized properties", () => {
+    const summary = prescriptionScanDiagnostics({ ...input(), pass: "table", tableReading: {
+      gridsDetected: 1, gridsExamined: 1, matchedTables: 1, eyeRows: 2, cellReads: 18,
+      blocker: "none", privateText: "PRIVATE PATIENT", values: "+3.00",
+    } } as PrescriptionScanDiagnosticInput);
+    expect(summary.pass).toBe("table");
+    expect(summary.tableReading).toEqual({ gridsDetected: 1, gridsExamined: 1, matchedTables: 1, eyeRows: 2, cellReads: 18, blocker: "none" });
+    expect(JSON.stringify(summary)).not.toContain("PRIVATE");
+    expect(JSON.stringify(summary)).not.toContain("+3.00");
+    const invalid = prescriptionScanDiagnostics({ ...input(), tableReading: {
+      gridsDetected: Infinity, gridsExamined: -1, matchedTables: NaN, eyeRows: 500, cellReads: 1.7, blocker: "PRIVATE PATIENT",
+    } } as unknown as PrescriptionScanDiagnosticInput);
+    expect(invalid.tableReading).toEqual({ gridsDetected: 0, gridsExamined: 0, matchedTables: 0, eyeRows: 100, cellReads: 1, blocker: "none" });
+  });
 });

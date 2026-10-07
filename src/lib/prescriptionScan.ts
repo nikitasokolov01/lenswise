@@ -61,6 +61,13 @@ export interface PrescriptionScanRegions {
   cells: Partial<Record<"od" | "os", Partial<Record<keyof ScannedEyeValues, PrescriptionScanRegion>>>>;
 }
 
+/** Real OCR labels and words assigned by observed table-cell boundaries. */
+export interface ObservedPrescriptionRow {
+  eye: "od" | "os";
+  label: PrescriptionScanWord;
+  cells: Partial<Record<keyof ScannedEyeValues, PrescriptionScanWord[]>>;
+}
+
 const blankEye = (): ScannedEyeValues => ({ sphere: null, cylinder: null, axis: null, add: null });
 const numericToken = /[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)|\bPLANO\b|\bPL\b|\bDS\b|\bSPH\b/gi;
 const fieldLabels = /\b(SPHERE|SPH|CYLINDER|CYL|AXIS|AX|ADD|PD|PRISM|BASE)\b/gi;
@@ -171,13 +178,11 @@ function splitMergedHeadings(word: PrescriptionScanWord): PrescriptionScanWord[]
   if (!symbols?.length || /\p{N}/u.test(word.text)) return [word];
   const observed = symbols.filter((symbol) => !/^\s*$/.test(symbol.text));
   if (observed.map((symbol) => symbol.text).join("").toUpperCase() !== word.text.replace(/\s/g, "").toUpperCase()) return [word];
-  if (observed.some((symbol, index) => {
+  if (observed.some((symbol) => {
     const box = symbol.bbox;
-    const previous = observed[index - 1];
     return !(/^[a-z]$/i.test(symbol.text) || isGridPunctuation(symbol.text))
       || !Object.values(box).every(Number.isFinite) || box.x1 <= box.x0 || box.y1 <= box.y0
       || box.x0 < word.bbox.x0 || box.x1 > word.bbox.x1 || box.y0 < word.bbox.y0 || box.y1 > word.bbox.y1
-      || previous && (box.x0 < previous.bbox.x0 || box.x0 + box.x1 < previous.bbox.x0 + previous.bbox.x1)
       || /^[a-z]$/i.test(symbol.text) && (!Number.isFinite(symbol.confidence) || symbol.confidence! < 90 || symbol.confidence! > 100);
   })) return [word];
   const letters = observed.filter((symbol) => /^[a-z]$/i.test(symbol.text));
@@ -194,6 +199,9 @@ function splitMergedHeadings(word: PrescriptionScanWord): PrescriptionScanWord[]
       x1: Math.max(...characters.map((symbol) => symbol.bbox.x1)),
       y1: Math.max(...characters.map((symbol) => symbol.bbox.y1)),
     };
+    // Grid punctuation and inflated individual letter boxes can overlap within
+    // a heading. Only the observed whole-heading letter envelopes establish
+    // column order: overlapping or reversed heading envelopes still reject.
     if (headings.length && bbox.x0 < headings[headings.length - 1].bbox.x1) return [word];
     headings.push({ text: term === "SEGHT" ? "Seg Ht" : term === "OCHT" ? "OC Ht" : term, confidence: Math.min(...characters.map((symbol) => symbol.confidence!)), bbox, symbols: characters });
     offset += term.length;
@@ -534,6 +542,59 @@ function validateEye(eye: ScannedEyeValues, name: string, warnings: string[]): S
     warnings.push(`${name}: ADD is outside the supported values. Check it manually.`);
   }
   return next;
+}
+
+/** Exact observed cells use the same clinical checks as the spatial parser. */
+export function parseObservedPrescriptionRows(
+  headings: Partial<Record<keyof ScannedEyeValues, PrescriptionScanWord>>,
+  rows: ObservedPrescriptionRow[],
+  prismPresent = false,
+): PrescriptionScanResult {
+  const warnings: string[] = [];
+  const validEvidence = (word: PrescriptionScanWord) => Number.isFinite(word.confidence)
+    && word.confidence! >= 60 && word.confidence! <= 100
+    && Object.values(word.bbox).every(Number.isFinite)
+    && word.bbox.x1 > word.bbox.x0 && word.bbox.y1 > word.bbox.y0;
+  const validHeading = (word: PrescriptionScanWord, field: string) => {
+    const label = word.text.trim().replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, "");
+    return validEvidence(word) && /^[a-z]+$/i.test(label) && wordColumnName(label) === field;
+  };
+  const clearHeaders = (["sphere", "cylinder", "axis"] as const).every((field) => {
+    const heading = headings[field];
+    return heading && validHeading(heading, field);
+  }) && Object.entries(headings).every(([field, heading]) => !heading
+    || validHeading(heading, field));
+  const clearRows = rows.length > 0 && rows.every((row) => validEvidence(row.label)
+    && !/\p{N}/u.test(row.label.text) && wordEye(row.label.text) === row.eye);
+  const uniqueRows = rows.filter((row) => row.eye === "od").length <= 1 && rows.filter((row) => row.eye === "os").length <= 1;
+  if (!clearHeaders || !clearRows || !uniqueRows) {
+    return {
+      od: blankEye(), os: blankEye(), pupillaryDistance: null, requiresRescan: true,
+      warnings: ["The observed table headings or eye labels are unclear or duplicated. Crop to one prescription and scan again."],
+    };
+  }
+  const result: PrescriptionScanResult = { od: blankEye(), os: blankEye(), pupillaryDistance: null, warnings, hasAlignedTable: true };
+  for (const row of rows) {
+    const values = blankEye();
+    for (const field of ["sphere", "cylinder", "axis", "add"] as const) {
+      if (!headings[field]) continue;
+      const cell = row.cells[field] ?? [];
+      // Read the complete cell first so duplicate/stray-token warnings remain
+      // sticky. Missing/invalid confidence never becomes a clinical value in
+      // this callback-based exact-cell path; leave legacy parsing unchanged.
+      values[field] = readSpatialCell(cell, row.eye.toUpperCase(), field, warnings);
+      if (cell.some((word) => !Number.isFinite(word.confidence) || word.confidence! < 0 || word.confidence! > 100)) {
+        values[field] = null;
+        warnings.push(`${row.eye.toUpperCase()}: ${field} has no valid reading confidence. Select it manually from the paper.`);
+      }
+    }
+    result[row.eye] = validateEye(values, row.eye.toUpperCase(), warnings);
+  }
+  for (const eye of ["od", "os"] as const) if (!rows.some((row) => row.eye === eye)) {
+    warnings.push(`${eye.toUpperCase()}: no clear prescription row found. Enter this eye manually.`);
+  }
+  if (prismPresent) warnings.push("Prism information may be present. This scanner does not import prism; check and record it separately.");
+  return result;
 }
 
 function parsePd(lines: string[], warnings: string[]): PupillaryDistanceInput | null {

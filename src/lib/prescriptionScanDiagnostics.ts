@@ -1,8 +1,16 @@
 import { findPrescriptionScanRegions, type PrescriptionScanResult, type PrescriptionScanWord } from "@/lib/prescriptionScan";
 
-export type PrescriptionScanDiagnosticPass = "initial" | "enhanced" | "final";
+export type PrescriptionScanDiagnosticPass = "initial" | "enhanced" | "table" | "final";
 type Heading = "sphere" | "cylinder" | "axis" | "add";
 type Blocker = "none" | "alignment" | "ambiguous_prescription" | "overlapping_rows";
+export interface PrescriptionTableDiagnostics {
+  gridsDetected: number;
+  gridsExamined: number;
+  matchedTables: number;
+  eyeRows: number;
+  cellReads: number;
+  blocker: "none" | "limits" | "invalid_geometry" | "ambiguous_prescription" | "uncertain_labels";
+}
 
 export interface PrescriptionScanDiagnosticInput {
   pass: PrescriptionScanDiagnosticPass;
@@ -13,6 +21,7 @@ export interface PrescriptionScanDiagnosticInput {
   fullCrop: boolean;
   words: PrescriptionScanWord[];
   result: PrescriptionScanResult;
+  tableReading?: PrescriptionTableDiagnostics;
 }
 
 /** Fixed metadata only. Never include recognized text, clinical values, or file details. */
@@ -39,6 +48,7 @@ export interface PrescriptionScanDiagnostics {
     anchors: { od: boolean; os: boolean };
     blocker: Blocker;
   };
+  tableReading?: PrescriptionTableDiagnostics;
 }
 
 const heading = (text: string): Heading | null => {
@@ -90,12 +100,19 @@ export function prescriptionScanDiagnostics(input: PrescriptionScanDiagnosticInp
   const regions = findPrescriptionScanRegions(words);
   const blocker: Blocker = input.result.requiresRowReview ? "overlapping_rows" : input.result.requiresRescan ? "ambiguous_prescription"
     : input.result.requiresAlignment ? "alignment" : "none";
+  const count = (value: number) => Number.isFinite(value) && value >= 0 ? Math.min(100, Math.floor(value)) : 0;
+  const tableReading = input.tableReading;
   return {
-    pass: ["initial", "enhanced", "final"].includes(input.pass) ? input.pass : "unknown",
+    pass: ["initial", "enhanced", "table", "final"].includes(input.pass) ? input.pass : "unknown",
     sourcePixels: { width: dimension(input.sourceWidth), height: dimension(input.sourceHeight) },
     ocrPixels: { width: dimension(input.ocrWidth), height: dimension(input.ocrHeight) },
     fullCrop: input.fullCrop === true, wordCount: words.length, standaloneHeadings, mergedHeadings: merged, eyeLabels,
     table: { aligned: input.result.hasAlignedTable === true, regionsAvailable: Boolean(regions),
       anchors: { od: Boolean(regions?.rows.od), os: Boolean(regions?.rows.os) }, blocker },
+    ...(tableReading ? { tableReading: {
+      gridsDetected: count(tableReading.gridsDetected), gridsExamined: count(tableReading.gridsExamined),
+      matchedTables: count(tableReading.matchedTables), eyeRows: count(tableReading.eyeRows), cellReads: count(tableReading.cellReads),
+      blocker: (["none", "limits", "invalid_geometry", "ambiguous_prescription", "uncertain_labels"] as const).find((value) => value === tableReading.blocker) ?? "none",
+    } } : {}),
   };
 }

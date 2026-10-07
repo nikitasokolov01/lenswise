@@ -23,6 +23,9 @@ import { sanitizePupillaryDistanceValue } from "@/lib/pupillaryDistance";
 import { cleanPrescriptionCellPixels, findPrescriptionCellInkBounds, normalizePrescriptionCellPixels, preparePrescriptionScanImages, type PreparedPrescriptionScanImages } from "@/lib/prescriptionScanImage";
 import { replacePrescriptionCellWords } from "@/lib/prescriptionScanRetry";
 import { prescriptionScanDiagnostics, type PrescriptionScanDiagnostics } from "@/lib/prescriptionScanDiagnostics";
+import { findPrescriptionGrids } from "@/lib/prescriptionScanGrid";
+import { readPrescriptionTableGrids } from "@/lib/prescriptionScanTable";
+import { mapPrescriptionTableCellWords, preparePrescriptionTableCell } from "@/lib/prescriptionScanTableImage";
 
 interface Crop { left: number; top: number; width: number; height: number }
 const FULL_CROP: Crop = { left: 0, top: 0, width: 1, height: 1 };
@@ -474,6 +477,48 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         if (retryRegions) { regions = retryRegions; regionSource = retryImages.grayscale; regionWords = retryWords; }
         confidence = Math.min(confidence, retry.data.confidence);
       }
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && !reviewedScanPrescription(parsed)) {
+        readingStatus = "Finding the printed table and reading its cells…";
+        setStatus(readingStatus);
+        setProgress(0);
+        // Detect actual printed rules independently of merged OCR headings.
+        // The geometry mask never becomes OCR input; only original grayscale
+        // cell pixels are read. The reader must recognize headings and eyes.
+        const context = prepared.grayscale.getContext("2d");
+        if (context) {
+          const sourceWidth = prepared.grayscale.width, sourceHeight = prepared.grayscale.height;
+          // Do not retain the full-page pixel buffer across the async cell reads.
+          const grids = findPrescriptionGrids(context.getImageData(0, 0, sourceWidth, sourceHeight).data, sourceWidth, sourceHeight);
+          await untilCancelled(scanWorker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: "" }));
+          const tableReading = await readPrescriptionTableGrids(grids, sourceWidth, sourceHeight, async (area, kind) => {
+            if (scanEpoch !== epoch.current) return [];
+            readingStatus = kind === "heading" ? "Identifying the printed column headings…"
+              : kind === "eye" ? "Checking the printed OD and OS labels…" : "Reading individual prescription cells…";
+            setStatus(readingStatus);
+            setProgress(0);
+            const cell = preparePrescriptionTableCell(prepared.grayscale, area);
+            focusedCanvases.push(cell.canvas);
+            try {
+              const reading = await untilCancelled(scanWorker!.recognize(cell.canvas, {}, { text: true, blocks: true }));
+              if (scanEpoch !== epoch.current) return [];
+              return mapPrescriptionTableCellWords(wordsFromBlocks(reading.data.blocks), cell.plan);
+            } finally {
+              cell.dispose();
+            }
+          }, () => scanEpoch !== epoch.current);
+          if (scanEpoch !== epoch.current || tableReading.metadata.cancelled) return;
+          const tableDetails = prescriptionScanDiagnostics({
+            pass: "table", sourceWidth: image.width, sourceHeight: image.height,
+            ocrWidth: sourceWidth, ocrHeight: sourceHeight, fullCrop,
+            words: tableReading.words, result: tableReading.result ?? parsePrescriptionScan(""),
+            tableReading: { gridsDetected: grids.length, ...tableReading.metadata },
+          });
+          setScanDetails((current) => [...current, tableDetails]);
+          // Never replace previous evidence: conflicts and ambiguity remain
+          // blank even if a cell retry looks cleaner.
+          if (tableReading.result) parsed = combinePrescriptionScanPasses(parsed, tableReading.result);
+        }
+      }
       if (!parsed.requiresRescan && !parsed.requiresAlignment && regions) {
         for (const eye of ["od", "os"] as const) {
           const row = regions.rows[eye];
@@ -685,15 +730,16 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 function ScanDetails({ passes }: { passes: PrescriptionScanDiagnostics[] }) {
   return <details className="rounded-lg border border-navy-100 bg-navy-50/40 p-3 text-xs text-navy-600">
     <summary className="cursor-pointer font-medium text-navy-800">Scan details (no prescription text)</summary>
-    <p className="mt-2">Scanner 2026.10.07.2. These details stay on this device and clear when you close the scanner. If a scan fails, you can share a screenshot of this panel to help troubleshoot.</p>
+    <p className="mt-2">Scanner 2026.10.07.3. These details stay on this device and clear when you close the scanner. If a scan fails, you can share a screenshot of this panel to help troubleshoot.</p>
     <div className="mt-3 space-y-3">{passes.map((detail, index) => <div key={`${detail.pass}-${index}`} className="space-y-1 rounded-lg border border-navy-100 bg-white p-2">
-      <p className="font-semibold text-navy-800">{detail.pass === "initial" ? "First reading" : "Enhanced reading"}</p>
+      <p className="font-semibold text-navy-800">{detail.pass === "initial" ? "First reading" : detail.pass === "table" ? "Table-cell reading" : "Enhanced reading"}</p>
       <p>Photo: {detail.sourcePixels.width} × {detail.sourcePixels.height} px · OCR: {detail.ocrPixels.width} × {detail.ocrPixels.height} px · {detail.fullCrop ? "Full photo" : "Cropped area"}</p>
       <p>Words detected: {detail.wordCount} · Eye labels: OD {detail.eyeLabels.od}, OS {detail.eyeLabels.os}</p>
       <p>Separate headings: SPH {detail.standaloneHeadings.sphere}, CYL {detail.standaloneHeadings.cylinder}, AXIS {detail.standaloneHeadings.axis}, ADD {detail.standaloneHeadings.add}</p>
       <p>Merged heading candidates: {detail.mergedHeadings.candidates} · With character data: {detail.mergedHeadings.withSymbols} · Lowest letter confidence: {detail.mergedHeadings.minimumLetterConfidence ?? "unavailable"}</p>
       {detail.mergedHeadings.candidates > 0 ? <p>Character text matches: {detail.mergedHeadings.symbolTextMatches} · Valid boxes: {detail.mergedHeadings.validSymbolBoxes} · Ordered boxes: {detail.mergedHeadings.orderedSymbolBoxes} · Missing confidence: {detail.mergedHeadings.missingLetterConfidence}</p> : null}
-      <p>Aligned table: {detail.table.aligned ? "yes" : "no"} · Eye anchors: OD {detail.table.anchors.od ? "yes" : "no"}, OS {detail.table.anchors.os ? "yes" : "no"} · Layout block: {detail.table.blocker.replace(/_/g, " ")}</p>
+      {detail.tableReading ? <p>Printed grids: {detail.tableReading.gridsDetected} · Examined: {detail.tableReading.gridsExamined} · Rx tables: {detail.tableReading.matchedTables} · Labelled eye rows: {detail.tableReading.eyeRows} · Cell readings: {detail.tableReading.cellReads} · Table block: {detail.tableReading.blocker.replace(/_/g, " ")}</p>
+        : <p>Aligned table: {detail.table.aligned ? "yes" : "no"} · Eye anchors: OD {detail.table.anchors.od ? "yes" : "no"}, OS {detail.table.anchors.os ? "yes" : "no"} · Layout block: {detail.table.blocker.replace(/_/g, " ")}</p>}
     </div>)}</div>
   </details>;
 }

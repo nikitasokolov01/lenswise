@@ -734,6 +734,50 @@ describe("printed prescription scan parsing", () => {
     expect(result.os.axis).toBe(35);
   });
 
+  it.each(["inflated letter", "overlapping grid punctuation"])("uses unchanged heading envelopes despite %s boxes", (failure) => {
+    const heading = mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]);
+    const expectedRegions = findPrescriptionScanRegions(mergedTable(heading));
+    if (failure === "inflated letter") {
+      // The last Sphere 'e' starts before 'h', but stays inside the same
+      // observed heading envelope. Do not invent replacement letter boxes.
+      const letter = heading.symbols![13];
+      expect(letter.text).toBe("e");
+      letter.bbox.x0 = 160;
+    } else {
+      // A detected vertical table rule may span the next heading's letters.
+      const separator = heading.symbols![7];
+      expect(separator.text).toBe("|");
+      separator.bbox.x1 = 300;
+    }
+    const words = mergedTable(heading);
+    const before = JSON.stringify(words);
+    const result = parsePrescriptionScan("Balance|Sphere|Cylinder| Axis Add Prism", words);
+    expect(result.od).toEqual({ sphere: 2, cylinder: 0, axis: null, add: 2.5 });
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: -0.25, axis: 35, add: 2.5 });
+    expect(result.hasAlignedTable).toBe(true);
+    expect(findPrescriptionScanRegions(words)).toEqual(expectedRegions);
+    expect(JSON.stringify(words)).toBe(before);
+  });
+
+  it.each(["crossing letter", "reversed headings"])("refuses merged headings with %s envelopes", (failure) => {
+    const heading = mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]);
+    if (failure === "crossing letter") {
+      heading.symbols![13].bbox.x1 = 300;
+    } else {
+      // Move the entire Cylinder envelope before Sphere, within the parent.
+      for (const symbol of heading.symbols!.slice(15)) {
+        symbol.bbox.x0 -= 140;
+        symbol.bbox.x1 -= 140;
+      }
+    }
+    const words = mergedTable(heading);
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    const result = parsePrescriptionScan("Balance|Sphere|Cylinder| Axis Add Prism", words);
+    expect(result.hasAlignedTable).toBeUndefined();
+    expect(result.od).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(result.os).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+  });
+
   it.each(["missing", "low confidence", "missing confidence", "outside word", "nonfinite", "zero height", "reordered", "text mismatch"])("refuses a merged heading with %s symbol evidence", (failure) => {
     const heading = mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]);
     const symbol = heading.symbols!.find((item) => item.text === "S")!;
