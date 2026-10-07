@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input";
 import { ADD_OPTIONS, AXIS_OPTIONS, CYLINDER_OPTIONS, SPHERE_OPTIONS } from "@/lib/prescriptionOptions";
 import {
   parsePrescriptionScan,
+  combinePrescriptionScanPasses,
   reviewedScanPrescription,
   type PrescriptionScanResult,
   type ReviewedPrescriptionScan,
   type ScannedEyeValues,
+  type PrescriptionScanWord,
 } from "@/lib/prescriptionScan";
 import { sanitizePupillaryDistanceValue } from "@/lib/pupillaryDistance";
 
@@ -21,7 +23,7 @@ interface Crop { left: number; top: number; width: number; height: number }
 const FULL_CROP: Crop = { left: 0, top: 0, width: 1, height: 1 };
 
 function canvasFromImage(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
-  const scale = Math.min(1, 2400 / Math.max(width, height));
+  const scale = Math.min(1, 4800 / Math.max(width, height), Math.sqrt(8_000_000 / (width * height)));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
@@ -127,7 +129,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       if (photoEpoch !== epoch.current) return;
       showImage(canvasFromImage(loaded, loaded.naturalWidth, loaded.naturalHeight));
     } catch {
-      setError("This photo could not be opened. Try a JPG or take a new photo with the camera.");
+      if (photoEpoch === epoch.current) setError("This photo could not be opened. Try a JPG or take a new photo with the camera.");
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -156,9 +158,9 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       setResult(null);
       setCameraOpen(true);
     } catch {
-      setError("Camera access was denied or no camera is available. Allow camera access or use Take a photo / Choose photo.");
+      if (cameraEpoch === epoch.current) setError("Camera access was denied or no camera is available. Allow camera access or use Take a photo / Choose photo.");
     } finally {
-      setCameraStarting(false);
+      if (cameraEpoch === epoch.current) setCameraStarting(false);
     }
   }
 
@@ -218,6 +220,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
     setStatus("Loading the on-device scanner…");
     const scanEpoch = ++epoch.current;
     let scanWorker: Worker | null = null;
+    let cropped: HTMLCanvasElement | null = null;
+    let checkingLayout = false;
     const timeout = window.setTimeout(() => {
       if (scanEpoch !== epoch.current) return;
       cancelScan();
@@ -236,7 +240,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         logger: (message) => {
           if (scanEpoch !== epoch.current) return;
           const recognizing = message.status === "recognizing text";
-          setStatus(recognizing ? "Reading prescription values…" : "Preparing the on-device scanner…");
+          setStatus(recognizing ? checkingLayout ? "Checking the table with a second reading…" : "Reading prescription values…" : "Preparing the on-device scanner…");
           setProgress(recognizing ? Math.round(message.progress * 100) : 0);
         },
         errorHandler: () => { /* Do not log worker errors or document content. */ },
@@ -244,16 +248,36 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       if (scanEpoch !== epoch.current) return;
       worker.current = scanWorker;
       await scanWorker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: "1", user_defined_dpi: "300" });
-      const cropped = document.createElement("canvas");
-      cropped.width = Math.max(1, Math.round(image.width * crop.width));
-      cropped.height = Math.max(1, Math.round(image.height * crop.height));
+      cropped = document.createElement("canvas");
+      const sourceWidth = Math.max(1, image.width * crop.width);
+      const sourceHeight = Math.max(1, image.height * crop.height);
+      const cropScale = Math.min(2, Math.max(1, 1800 / Math.max(sourceWidth, sourceHeight)),
+        4000 / Math.max(sourceWidth, sourceHeight), Math.sqrt(6_000_000 / (sourceWidth * sourceHeight)));
+      cropped.width = Math.max(1, Math.round(sourceWidth * cropScale));
+      cropped.height = Math.max(1, Math.round(sourceHeight * cropScale));
       const context = cropped.getContext("2d");
       if (!context) throw new Error("Canvas unavailable");
-      context.drawImage(image, image.width * crop.left, image.height * crop.top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
-      const recognized = await scanWorker.recognize(cropped);
+      context.fillStyle = "white";
+      context.fillRect(0, 0, cropped.width, cropped.height);
+      context.filter = "grayscale(1) contrast(1.15)";
+      context.drawImage(image, image.width * crop.left, image.height * crop.top, sourceWidth, sourceHeight, 0, 0, cropped.width, cropped.height);
+      const recognized = await scanWorker.recognize(cropped, {}, { text: true, blocks: true });
       if (scanEpoch !== epoch.current) return;
-      const parsed = parsePrescriptionScan(recognized.data.text);
-      if (recognized.data.confidence < 70) parsed.warnings.unshift("The photo was difficult to read. Carefully check every value, especially plus/minus signs and axis.");
+      const wordsFromBlocks = (blocks: typeof recognized.data.blocks): PrescriptionScanWord[] =>
+        (blocks ?? []).flatMap((block) => block.paragraphs.flatMap((paragraph) => paragraph.lines.flatMap((line) => line.words)));
+      let parsed = parsePrescriptionScan(recognized.data.text, wordsFromBlocks(recognized.data.blocks));
+      let confidence = recognized.data.confidence;
+      if (!parsed.requiresRescan && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+        checkingLayout = true;
+        setProgress(0);
+        setStatus("Checking the table with a second reading…");
+        await scanWorker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+        const retry = await scanWorker.recognize(cropped, {}, { text: true, blocks: true });
+        if (scanEpoch !== epoch.current) return;
+        parsed = combinePrescriptionScanPasses(parsed, parsePrescriptionScan(retry.data.text, wordsFromBlocks(retry.data.blocks)));
+        confidence = Math.min(confidence, retry.data.confidence);
+      }
+      if (confidence < 70) parsed.warnings.unshift("The photo was difficult to read. Carefully check every value, especially plus/minus signs and axis.");
       setResult(parsed);
       setConfirmed(false);
       setIncludePd(true);
@@ -261,6 +285,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       if (scanEpoch === epoch.current) setError("The scan could not complete. Try a clearer, well-lit photo cropped to the prescription table, or enter the values manually.");
     } finally {
       window.clearTimeout(timeout);
+      if (cropped) { cropped.width = 0; cropped.height = 0; }
       await scanWorker?.terminate();
       if (worker.current === scanWorker) worker.current = null;
       if (scanEpoch === epoch.current) setBusy(false);
@@ -326,6 +351,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
       {result ? (
         <div className="space-y-4">
+          <p className="text-xs font-medium text-navy-600" role="status">{[result.od, result.os].filter((eye) => eye.sphere !== null && eye.cylinder !== null && (eye.cylinder === 0 || eye.axis !== null)).length} of 2 eye rows read. Any blank field needs a manual check; signs and ADD always need review.</p>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Check every value against the paper, including signs, ADD, and axis.</p>{result.warnings.length ? <ul className="mt-2 list-disc space-y-1 pl-4">{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}</div>
           <div className="grid gap-3 sm:grid-cols-2">{(["od", "os"] as const).map((eye) => <ReviewEye key={eye} eye={eye} values={result[eye]} onChange={(field, value) => updateEye(eye, field, value)} />)}</div>
           {pd ? <div className="rounded-lg border border-navy-100 p-3"><label className="flex items-center gap-2 text-sm font-medium text-navy-700"><input type="checkbox" checked={includePd} onChange={(event) => { setIncludePd(event.target.checked); setConfirmed(false); }} className="h-4 w-4 accent-teal-600" />Also fill the printed PD (mm)</label>{includePd ? <div className="mt-3 flex flex-wrap gap-3">{(pd.mode === "binocular" ? ["binocular"] : ["right", "left"]).map((field) => <div key={field} className="w-28"><Label htmlFor={`scan-pd-${field}`} className="text-xs">{field === "binocular" ? "Total PD" : field === "right" ? "OD / Right" : "OS / Left"}</Label><Input id={`scan-pd-${field}`} inputMode="decimal" maxLength={4} value={pd[field as "binocular" | "right" | "left"]} onChange={(event) => { const value = sanitizePupillaryDistanceValue(event.target.value); setResult((current) => current?.pupillaryDistance ? { ...current, pupillaryDistance: { ...current.pupillaryDistance, [field]: value } } : current); setConfirmed(false); }} /></div>)}</div> : null}</div> : null}

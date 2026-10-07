@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="700" viewBox="0 0 1800 700">
+  <rect width="1800" height="700" fill="white"/>
+  <g fill="black" font-family="Arial, sans-serif" font-size="48">
+    <text x="60" y="90" font-size="30">SYNTHETIC RX TABLE — NOT FOR CLINICAL USE</text>
+    <text x="280" y="230">Sphere</text><text x="540" y="230">Cylinder</text><text x="830" y="230">Axis</text>
+    <text x="1070" y="230">Add</text><text x="1310" y="230">Prism</text><text x="1550" y="230">Base</text>
+    <text x="60" y="350">O.D.</text><text x="280" y="350">-2.00</text><text x="540" y="350">-1.25</text><text x="830" y="350">180</text><text x="1070" y="350">+2.00</text><text x="1310" y="350">1.00</text><text x="1550" y="350">BI</text>
+    <text x="60" y="470">O.S.</text><text x="280" y="470">+1.50</text><text x="540" y="470">SPH</text><text x="1070" y="470">+2.25</text><text x="1310" y="470">1.00</text><text x="1550" y="470">BI</text>
+    <text x="60" y="610">PD: 63.5</text>
+  </g>
+</svg>
