@@ -20,6 +20,12 @@ export interface PrescriptionScanResult {
   warnings: string[];
   /** Multiple tables/rows cannot be resolved by another automatic reading. */
   requiresRescan?: boolean;
+  /** Only a newly aligned source may replace this blank reading. */
+  requiresAlignment?: boolean;
+  /** Parser evidence of a unique horizontal table with an observed eye row. */
+  hasAlignedTable?: boolean;
+  /** One observed eye anchor spans more than one possible numeric row. */
+  requiresRowReview?: boolean;
 }
 
 export interface ReviewedPrescriptionScan {
@@ -151,6 +157,8 @@ function tableWordEye(text: string): "od" | "os" | null {
   return /^(?:O5|QS)[.:]?$/i.test(text.trim()) ? "os" : null;
 }
 
+const isGridPunctuation = (text: string) => /^[\p{P}\p{S}\s]+$/u.test(text);
+
 interface SpatialEyeGroup {
   eye: "od" | "os";
   labels: PrescriptionScanWord[];
@@ -169,16 +177,17 @@ interface SpatialTableLayout {
 }
 
 function columnBounds(layout: SpatialTableLayout, heading: PrescriptionScanWord): { left: number; right: number } {
-  const index = layout.headerWords.indexOf(heading);
+  const headers = layout.headerWords.filter((word) => !isGridPunctuation(word.text));
+  const index = headers.indexOf(heading);
   return {
-    left: index > 0 ? (wordX(layout.headerWords[index - 1]) + wordX(heading)) / 2 : heading.bbox.x0 - wordHeight(heading) * 2,
-    right: layout.headerWords[index + 1] ? (wordX(heading) + wordX(layout.headerWords[index + 1])) / 2 : heading.bbox.x1 + wordHeight(heading) * 2,
+    left: index > 0 ? (wordX(headers[index - 1]) + wordX(heading)) / 2 : heading.bbox.x0 - wordHeight(heading) * 2,
+    right: headers[index + 1] ? (wordX(heading) + wordX(headers[index + 1])) / 2 : heading.bbox.x1 + wordHeight(heading) * 2,
   };
 }
 
 /** Geometry recognizes explicit labels, not an assumed first/right row order. */
 function spatialLayouts(words: PrescriptionScanWord[]): {
-  usable: PrescriptionScanWord[]; layouts: SpatialTableLayout[]; ambiguous: boolean;
+  usable: PrescriptionScanWord[]; layouts: SpatialTableLayout[]; ambiguous: boolean; requiresAlignment: boolean; requiresRowReview: boolean;
 } {
   const usable = words.filter((word) => word.text.trim() && Object.values(word.bbox).every(Number.isFinite)
     && word.bbox.x1 > word.bbox.x0 && word.bbox.y1 > word.bbox.y0);
@@ -189,9 +198,15 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
   const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const usedHeaders = new Set<PrescriptionScanWord>();
   const layouts: SpatialTableLayout[] = [];
+  const tiltedHeaderTops: number[] = [];
+  let requiresAlignment = false;
+  let requiresRowReview = false;
   for (const anchor of anchors) {
     if (usedHeaders.has(anchor)) continue;
-    const candidates = sameBand(anchor).filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 30);
+    // A wider candidate search is ONLY for detecting/refusing tilt. Values
+    // are still assigned using the narrow, horizontal header/row bands.
+    const candidates = usable.filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 30
+      && Math.abs(wordY(word) - wordY(anchor)) <= Math.max(wordHeight(word), wordHeight(anchor)) * 0.7 + Math.abs(wordX(word) - wordX(anchor)) * 0.18);
     const nearest = (field: keyof ScannedEyeValues, afterX: number) => candidates.filter((word) => wordColumnName(word.text) === field && wordX(word) > afterX)
       .sort((a, b) => Math.abs(wordY(a) - wordY(anchor)) - Math.abs(wordY(b) - wordY(anchor)))[0];
     const cylinder = nearest("cylinder", wordX(anchor));
@@ -200,12 +215,21 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
     const core = [anchor, cylinder, axis];
     const headerCenter = median(core.map(wordY));
     const headerHeight = median(core.map(wordHeight));
+    const credible = core.filter((word) => wordHeight(word) >= headerHeight * 0.6 && wordHeight(word) <= headerHeight * 1.4);
+    const slopes: number[] = [];
+    for (let first = 0; first < credible.length; first++) for (let second = first + 1; second < credible.length; second++) {
+      const distance = wordX(credible[second]) - wordX(credible[first]);
+      if (Math.abs(distance) > headerHeight * 4) slopes.push((wordY(credible[second]) - wordY(credible[first])) / distance);
+    }
+    const slope = slopes.length ? median(slopes) : 0;
+    const tilted = Math.abs(slope) > 0.04;
     const isNumericArtifact = (word: PrescriptionScanWord) => /^[+\-\d.,]+$/.test(normalizeText(word.text).trim())
       && ((word.confidence ?? 100) < 30 || wordHeight(word) < headerHeight * 0.25);
     // One inflated word box must not drag the values row into the heading
     // band. Tiny/low-confidence numeric specks are not printed headings.
-    const headerWords = usable.filter((word) => Math.abs(wordY(word) - headerCenter)
-      <= Math.max(headerHeight, Math.min(wordHeight(word), headerHeight * 1.5)) * 0.6 && !isNumericArtifact(word))
+    const intercept = median(credible.map((word) => wordY(word) - slope * wordX(word)));
+    const headerWords = usable.filter((word) => Math.abs(wordY(word) - (tilted ? intercept + slope * wordX(word) : headerCenter))
+      <= Math.max(headerHeight, Math.min(wordHeight(word), headerHeight * 1.5)) * 0.6 && !isNumericArtifact(word) && !isGridPunctuation(word.text))
       .sort((a, b) => wordX(a) - wordX(b));
     const opticalHeaders = headerWords.filter((word) => wordColumnName(word.text) && (word.confidence ?? 100) >= 30);
     const fields = opticalHeaders.map((word) => wordColumnName(word.text));
@@ -214,6 +238,11 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
       // A labelled values row is not a second table heading.
       || headerWords.some((word) => wordEye(word.text) || /^[+\-\d.,]+$/.test(normalizeText(word.text).trim()))) continue;
     opticalHeaders.forEach((word) => usedHeaders.add(word));
+    if (tilted) {
+      requiresAlignment = true;
+      tiltedHeaderTops.push(Math.min(...headerWords.map((word) => word.bbox.y0)));
+      continue;
+    }
     layouts.push({
       headerWords, opticalHeaders, headerHeight,
       headerBottom: Math.min(Math.max(...headerWords.map((word) => word.bbox.y1)), headerCenter + headerHeight * 0.65),
@@ -226,9 +255,9 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
     .map((band) => Math.min(...band.map((word) => word.bbox.y0)));
   const sectionTops = usable.filter((word) => /^(?:NOTES?|INSTRUCTIONS?|COMMENTS?|SAMPLE|ASSESSMENT|DIAGNOSIS|SIGNATURE)[.:]?$/i.test(word.text.trim()))
     .map((word) => word.bbox.y0);
-  let ambiguous = layouts.length > 1;
+  let ambiguous = layouts.length + tiltedHeaderTops.length > 1;
   for (const layout of layouts) {
-    const nextTops = [...layouts.filter((other) => other !== layout).map((other) => Math.min(...other.headerWords.map((word) => word.bbox.y0))), ...auxiliaryTops, ...sectionTops]
+    const nextTops = [...layouts.filter((other) => other !== layout).map((other) => Math.min(...other.headerWords.map((word) => word.bbox.y0))), ...tiltedHeaderTops, ...auxiliaryTops, ...sectionTops]
       .filter((top) => top > layout.headerBottom);
     layout.boundary = Math.min(...nextTops, Number.POSITIVE_INFINITY);
     const firstX = Math.min(...layout.opticalHeaders.map(wordX));
@@ -273,6 +302,24 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
         if (!previous) group.top = Math.max(layout.headerBottom, Math.min(group.top, ...opticalGeometry.map((word) => word.bbox.y0 - margin)));
         if (!next) group.bottom = Math.min(layout.boundary, Math.max(group.bottom, ...opticalGeometry.map((word) => word.bbox.y1 + margin)));
       }
+      if (groups.length === 1) {
+        // An inflated lone OS/OD box can span both printed eye rows. Never
+        // borrow an unlabelled row's axis merely because only one label read.
+        for (const heading of layout.opticalHeaders) {
+          const { left, right } = columnBounds(layout, heading);
+          const numericWords = usable.filter((word) => wordY(word) > group.top && wordY(word) < group.bottom
+            && wordX(word) > left && wordX(word) < right && !layout.headerWords.includes(word) && !group.labels.includes(word)
+            && wordHeight(word) >= layout.headerHeight * 0.35 && Boolean(normalizeText(word.text).match(numericToken)?.length))
+            .sort((a, b) => wordY(a) - wordY(b));
+          const clusters: PrescriptionScanWord[][] = [];
+          for (const word of numericWords) {
+            const previousCluster = clusters[clusters.length - 1];
+            if (previousCluster && previousCluster.some((item) => Math.abs(wordY(item) - wordY(word)) <= Math.max(wordHeight(item), wordHeight(word)) * 0.65)) previousCluster.push(word);
+            else clusters.push([word]);
+          }
+          if (clusters.length > 1) requiresRowReview = true;
+        }
+      }
       const hasValues = layout.opticalHeaders.some((heading) => {
         const { left, right } = columnBounds(layout, heading);
         return usable.some((word) => wordY(word) > group.top && wordY(word) < group.bottom && wordX(word) > left && wordX(word) < right
@@ -282,16 +329,16 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
     }
     if (layout.groups.filter((group) => group.eye === "od").length > 1 || layout.groups.filter((group) => group.eye === "os").length > 1) ambiguous = true;
   }
-  return { usable, layouts, ambiguous };
+  return { usable, layouts, ambiguous, requiresAlignment, requiresRowReview };
 }
 
 /** Align values by printed columns instead of flattening blank cells away. */
 function spatialRows(words: PrescriptionScanWord[], warnings: string[]): {
-  rows: Record<"od" | "os", ScannedEyeValues[]>; hasTable: boolean; ambiguous: boolean;
+  rows: Record<"od" | "os", ScannedEyeValues[]>; hasTable: boolean; ambiguous: boolean; requiresAlignment: boolean; requiresRowReview: boolean;
 } {
-  const { usable, layouts, ambiguous } = spatialLayouts(words);
+  const { usable, layouts, ambiguous, requiresAlignment, requiresRowReview } = spatialLayouts(words);
   const rows: Record<"od" | "os", ScannedEyeValues[]> = { od: [], os: [] };
-  if (!ambiguous) for (const layout of layouts) {
+  if (!ambiguous && !requiresAlignment && !requiresRowReview) for (const layout of layouts) {
     for (const group of layout.groups) {
       if (group.labels.some((label) => (label.confidence ?? 100) < 40 || !wordEye(label.text))) {
         warnings.push(`${group.eye.toUpperCase()}: the eye label was faint. Confirm right/left against the paper.`);
@@ -307,13 +354,13 @@ function spatialRows(words: PrescriptionScanWord[], warnings: string[]): {
       rows[group.eye].push(values);
     }
   }
-  return { rows, hasTable: layouts.some((layout) => layout.groups.length > 0), ambiguous };
+  return { rows, hasTable: layouts.some((layout) => layout.groups.length > 0), ambiguous, requiresAlignment, requiresRowReview };
 }
 
 /** Local retry crops include only a uniquely identified optical table section. */
 export function findPrescriptionScanRegions(words: PrescriptionScanWord[]): PrescriptionScanRegions | null {
-  const { usable, layouts, ambiguous } = spatialLayouts(words);
-  if (ambiguous || layouts.length !== 1 || !layouts[0].groups.length) return null;
+  const { usable, layouts, ambiguous, requiresAlignment, requiresRowReview } = spatialLayouts(words);
+  if (ambiguous || requiresAlignment || requiresRowReview || layouts.length !== 1 || !layouts[0].groups.length) return null;
   const layout = layouts[0];
   const labelWords = layout.groups.flatMap((group) => group.labels);
   const left = Math.max(0, Math.floor(Math.min(...layout.headerWords.map((word) => word.bbox.x0), ...labelWords.map((word) => word.bbox.x0))));
@@ -541,10 +588,13 @@ export function parsePrescriptionScan(rawText: string, words: PrescriptionScanWo
 
   const spatial = spatialRows(words, warnings);
   const rawAmbiguous = rawTableHeadings > 1 || credibleRawRows.od > 1 || credibleRawRows.os > 1;
+  if (spatial.requiresAlignment) warnings.push("Photo appears tilted. Straighten the prescription table and scan again; no values from this reading were imported.");
+  if (spatial.requiresRowReview) warnings.push("One eye label spans multiple possible numeric rows. Keep both printed eye labels visible and scan again, or enter the values manually.");
   const sharedAddLine = lines.filter((line, index) => /^OU\s+ADD\b/i.test(line) || (!claimedAddLines.has(index) && /^ADD\b/i.test(line)));
   const sharedAdd = sharedAddLine.length === 1 ? parseNumber(sharedAddLine[0].replace(/^(?:OU\s+)?ADD\b/i, "").match(numericToken)?.[0]) : null;
   const getEye = (eye: "od" | "os") => {
     const name = eye.toUpperCase();
+    if (spatial.requiresAlignment || spatial.requiresRowReview) return blankEye();
     if (spatial.ambiguous || rawAmbiguous) {
       warnings.push(`${name}: multiple prescriptions or eye rows were found. Crop to one prescription and scan again.`);
       return blankEye();
@@ -571,23 +621,37 @@ export function parsePrescriptionScan(rawText: string, words: PrescriptionScanWo
   if (/\b(PRISM|BASE\s+(?:IN|OUT|UP|DOWN)|BI|BO|BU|BD)\b/i.test(rawText)) {
     warnings.push("Prism information may be present. This scanner does not import prism; check and record it separately.");
   }
+  const requiresRescan = spatial.ambiguous || rawAmbiguous || spatial.requiresRowReview || rows.od.length > 1 || rows.os.length > 1;
   return {
-    od, os, pupillaryDistance: parsePd(lines, warnings), warnings,
-    ...(spatial.ambiguous || rawAmbiguous || rows.od.length > 1 || rows.os.length > 1 ? { requiresRescan: true } : {}),
+    od, os, pupillaryDistance: spatial.requiresAlignment || spatial.requiresRowReview ? null : parsePd(lines, warnings), warnings,
+    ...(requiresRescan ? { requiresRescan: true } : {}),
+    ...(spatial.requiresAlignment ? { requiresAlignment: true } : {}),
+    ...(spatial.hasTable && !requiresRescan && !spatial.requiresAlignment ? { hasAlignedTable: true } : {}),
+    ...(spatial.requiresRowReview ? { requiresRowReview: true } : {}),
   };
 }
 
 /** A retry can recover missing cells, but disagreements must be reviewed. */
 export function combinePrescriptionScanPasses(first: PrescriptionScanResult, second: PrescriptionScanResult): PrescriptionScanResult {
-  const warnings = [...first.warnings, ...second.warnings];
+  let warnings = [...first.warnings, ...second.warnings];
   if (first.requiresRescan || second.requiresRescan) {
-    return { od: blankEye(), os: blankEye(), pupillaryDistance: null, warnings: [...new Set(warnings)], requiresRescan: true };
+    return {
+      od: blankEye(), os: blankEye(), pupillaryDistance: null, warnings: [...new Set(warnings)], requiresRescan: true,
+      ...(first.requiresRowReview || second.requiresRowReview ? { requiresRowReview: true } : {}),
+    };
+  }
+  if (first.requiresAlignment || second.requiresAlignment) {
+    const alignedEvidence = !first.requiresAlignment && first.hasAlignedTable || !second.requiresAlignment && second.hasAlignedTable;
+    if (!alignedEvidence) {
+      return { od: blankEye(), os: blankEye(), pupillaryDistance: null, warnings: [...new Set(warnings)], requiresAlignment: true };
+    }
+    warnings = warnings.filter((warning) => !warning.startsWith("Photo appears tilted."));
   }
   const mergeEye = (eye: "od" | "os") => {
     const merged = blankEye();
     for (const field of ["sphere", "cylinder", "axis", "add"] as const) {
-      const a = first[eye][field];
-      const b = second[eye][field];
+      const a = first.requiresAlignment ? null : first[eye][field];
+      const b = second.requiresAlignment ? null : second[eye][field];
       if (warnings.some((warning) => warning.startsWith(`${eye.toUpperCase()}: ${field} has duplicate or unclear`)
         || warning.startsWith(`${eye.toUpperCase()}: two readings disagree on ${field}.`))) {
         merged[field] = null;
@@ -599,12 +663,17 @@ export function combinePrescriptionScanPasses(first: PrescriptionScanResult, sec
     if (merged.cylinder === 0) merged.axis = null;
     return merged;
   };
-  let pd = warnings.some((warning) => warning.startsWith("Two readings disagree on PD.")) ? null : first.pupillaryDistance ?? second.pupillaryDistance;
-  if (first.pupillaryDistance && second.pupillaryDistance && JSON.stringify(first.pupillaryDistance) !== JSON.stringify(second.pupillaryDistance)) {
+  const firstPd = first.requiresAlignment ? null : first.pupillaryDistance;
+  const secondPd = second.requiresAlignment ? null : second.pupillaryDistance;
+  let pd = warnings.some((warning) => warning.startsWith("Two readings disagree on PD.")) ? null : firstPd ?? secondPd;
+  if (firstPd && secondPd && JSON.stringify(firstPd) !== JSON.stringify(secondPd)) {
     pd = null;
     warnings.push("Two readings disagree on PD. Enter it manually from the paper.");
   }
-  return { od: mergeEye("od"), os: mergeEye("os"), pupillaryDistance: pd, warnings: [...new Set(warnings)] };
+  return {
+    od: mergeEye("od"), os: mergeEye("os"), pupillaryDistance: pd, warnings: [...new Set(warnings)],
+    ...(!first.requiresAlignment && first.hasAlignedTable || !second.requiresAlignment && second.hasAlignedTable ? { hasAlignedTable: true } : {}),
+  };
 }
 
 export function reviewedScanPrescription(result: Pick<PrescriptionScanResult, "od" | "os">): PrescriptionInput | null {

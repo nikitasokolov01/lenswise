@@ -569,4 +569,121 @@ describe("printed prescription scan parsing", () => {
     expect(first.warnings.join(" ")).not.toContain("sphere has duplicate or unclear");
     expect(combinePrescriptionScanPasses(first, second).od.sphere).toBe(-2);
   });
+
+  const tiltedTable = (slope: number): PrescriptionScanWord[] => {
+    const tilted = (text: string, x: number, y: number, height = 18): PrescriptionScanWord => ({
+      text, confidence: 95, bbox: { x0: x, y0: 100 + y + slope * x, x1: x + 50, y1: 100 + y + slope * x + height },
+    });
+    return [tilted("Sphere", 100, 0, 40), tilted("Cylinder", 150, 0, 40), tilted("Axis", 400, 0, 40),
+      tilted("OD", 0, 70), tilted("-2.00", 100, 70), tilted("-0.50", 150, 70), tilted("180", 400, 70),
+      tilted("OS", 0, 100), tilted("-1.00", 100, 100), tilted("-0.25", 150, 100), tilted("90", 400, 100),
+    ];
+  };
+
+  it.each([0.08, -0.08])("refuses tilted geometry before an axis can cross into the other eye (slope %s)", (slope) => {
+    const words = tiltedTable(slope);
+    const result = parsePrescriptionScan("Sphere Cylinder Axis\nOD -2.00 -0.50 180\nOS -1.00 -0.25 90\nPD: 63", words);
+    expect(result.requiresAlignment).toBe(true);
+    expect(result.requiresRescan).toBeUndefined();
+    expect(result.od).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(result.os).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(result.pupillaryDistance).toBeNull();
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+  });
+
+  it("allows a genuinely aligned reading to replace a blank alignment failure", () => {
+    const first = parsePrescriptionScan("Sphere Cylinder Axis", tiltedTable(0.08));
+    const second = parsePrescriptionScan("Sphere Cylinder Axis\nPD: 63", tiltedTable(0));
+    expect(second.hasAlignedTable).toBe(true);
+    const result = combinePrescriptionScanPasses(first, second);
+    expect(result.requiresAlignment).toBeUndefined();
+    expect(result.od.axis).toBe(180);
+    expect(result.os.axis).toBe(90);
+    expect(result.pupillaryDistance?.binocular).toBe("63");
+    expect(result.warnings.join(" ")).not.toContain("Photo appears tilted");
+    expect(combinePrescriptionScanPasses(second, first).od).toEqual(second.od);
+    expect(combinePrescriptionScanPasses(first, first).requiresAlignment).toBe(true);
+    const multiple = parsePrescriptionScan("OD -2.00 -0.50 180\nOD -3.00 -0.75 175\nOS -1.00 -0.25 90", tiltedTable(0.08));
+    const blocked = combinePrescriptionScanPasses(multiple, second);
+    expect(blocked.requiresRescan).toBe(true);
+    expect(blocked.os.axis).toBeNull();
+  });
+
+  it.each(["", "OD -2.00 -0.50 180\nOS -1.00 -0.25 90\nPD: 63"])("keeps alignment failure blank when another pass lacks aligned table evidence: %s", (rawText) => {
+    const tilted = parsePrescriptionScan("Sphere Cylinder Axis", tiltedTable(0.08));
+    const unproven = parsePrescriptionScan(rawText);
+    expect(unproven.hasAlignedTable).toBeUndefined();
+    for (const result of [combinePrescriptionScanPasses(tilted, unproven), combinePrescriptionScanPasses(unproven, tilted)]) {
+      expect(result.requiresAlignment).toBe(true);
+      expect(result.hasAlignedTable).toBeUndefined();
+      expect(result.od.sphere).toBeNull();
+      expect(result.os.axis).toBeNull();
+      expect(result.pupillaryDistance).toBeNull();
+      expect(result.warnings.join(" ")).toContain("Photo appears tilted");
+    }
+  });
+
+  it("requires a visible eye row as well as aligned headings for recovery evidence", () => {
+    const tilted = parsePrescriptionScan("Sphere Cylinder Axis", tiltedTable(0.08));
+    const headingsOnly = parsePrescriptionScan("OD -2.00 -0.50 180\nOS -1.00 -0.25 90", tiltedTable(0).slice(0, 3));
+    expect(headingsOnly.hasAlignedTable).toBeUndefined();
+    expect(combinePrescriptionScanPasses(tilted, headingsOnly).requiresAlignment).toBe(true);
+  });
+
+  it("retains multiple-table refusal when one spatial table is tilted but raw text omits it", () => {
+    const secondTable = tiltedTable(0.08).map((entry) => ({ ...entry, bbox: { ...entry.bbox, y0: entry.bbox.y0 + 400, y1: entry.bbox.y1 + 400 } }));
+    const words = [...tiltedTable(0), ...secondTable];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis\nOD -2.00 -0.50 180\nOS -1.00 -0.25 90", words);
+    expect(result.requiresAlignment).toBe(true);
+    expect(result.requiresRescan).toBe(true);
+    expect(result.hasAlignedTable).toBeUndefined();
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    const aligned = parsePrescriptionScan("Sphere Cylinder Axis", tiltedTable(0));
+    expect(combinePrescriptionScanPasses(result, aligned).requiresRescan).toBe(true);
+    expect(combinePrescriptionScanPasses(result, aligned).os.axis).toBeNull();
+  });
+
+  it("permits negligible heading slope while retaining both explicit eye rows", () => {
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", tiltedTable(0.01));
+    expect(result.requiresAlignment).toBeUndefined();
+    expect(result.od.axis).toBe(180);
+    expect(result.os.axis).toBe(90);
+  });
+
+  it("does not use pure grid punctuation as a column midpoint neighbor", () => {
+    const words = [...tableHeadings(), word("|", 160, 0, 95, 2), word("_", 280, 0, 95, 2),
+      word("OD", 0, 50), word("-2.00", 150, 50, 95, 30), word("-0.50", 200, 50), word("180", 300, 50),
+      word("OS", 0, 100), word("-1.00", 150, 100, 95, 30), word("D.S", 200, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.od.sphere).toBe(-2);
+    expect(result.os.sphere).toBe(-1);
+    expect(findPrescriptionScanRegions(words)!.cells.od!.sphere!.width).toBe(121);
+  });
+
+  it("withholds an entire eye when one inflated label spans multiple numeric row baselines", () => {
+    const words = tableHeadings(10).map((entry) => ({ ...entry, bbox: { ...entry.bbox, y1: 50 } }));
+    words.push({ text: "OS", confidence: 90, bbox: { x0: 0, y0: 103, x1: 55, y1: 160 } },
+      word("-2.00", 100, 70), word("-0.50", 200, 70), word("180", 300, 70),
+      word("-1.00", 100, 140), word("D.S", 200, 140));
+    const result = parsePrescriptionScan("Sphere Cylinder Axis\nOS Sphere -1.00 Cylinder D.S\nPD: 63", words);
+    expect(result.requiresRowReview).toBe(true);
+    expect(result.requiresRescan).toBe(true);
+    expect(result.os).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(result.pupillaryDistance).toBeNull();
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    const cleaner = parsePrescriptionScan("OS Sphere -1.00 Cylinder D.S");
+    expect(combinePrescriptionScanPasses(result, cleaner).os.cylinder).toBeNull();
+  });
+
+  it("does not mistake same-baseline sign/decimal fragments for two unlabelled rows", () => {
+    const words = [...tableHeadings(), word("OS", 0, 100),
+      word("+", 100, 100, 95, 8), word("1", 112, 100, 95, 8), word(".", 123, 100, 95, 4), word("75", 130, 100, 95, 25),
+      word("D.S", 200, 100),
+    ];
+    const result = parsePrescriptionScan("Sphere Cylinder Axis", words);
+    expect(result.requiresRowReview).toBeUndefined();
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
+    expect(findPrescriptionScanRegions(words)!.rows.os).toBeDefined();
+  });
 });

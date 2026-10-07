@@ -390,7 +390,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       let regionWords = firstWords;
       let parsed = parsePrescriptionScan(recognized.data.text, firstWords);
       let confidence = recognized.data.confidence;
-      if (!parsed.requiresRescan && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && (!reviewedScanPrescription(parsed) || confidence < 70)) {
         readingStatus = "Enhancing faint text and checking both eye rows…";
         setProgress(0);
         setStatus(readingStatus);
@@ -416,7 +416,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         if (retryRegions) { regions = retryRegions; regionSource = retryImages.grayscale; regionWords = retryWords; }
         confidence = Math.min(confidence, retry.data.confidence);
       }
-      if (!parsed.requiresRescan && regions) {
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && regions) {
         for (const eye of ["od", "os"] as const) {
           const row = regions.rows[eye];
           if (!row || !eyeNeedsReading(parsed[eye])) continue;
@@ -450,7 +450,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
           if (parsed.requiresRescan) break;
         }
       }
-      if (!parsed.requiresRescan && regions && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && regions && (!reviewedScanPrescription(parsed) || confidence < 70)) {
         // Cell retries retain the original observed table headings/eye labels.
         // OCR recognizes the printed characters; there is no digit substitution
         // or assumption that an unlabelled second row belongs to the left eye.
@@ -553,6 +553,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   }
 
   const reviewed = result ? reviewedScanPrescription(result) : null;
+  const completeEyeRows = result ? [result.od, result.os].filter((eye) => !eyeNeedsReading(eye)).length : 0;
   const pd = result?.pupillaryDistance ?? null;
   const validPd = (value: string, min: number, max: number) => Boolean(value.trim()) && Number(value) >= min && Number(value) <= max;
   const pdComplete = !includePd || !pd || (pd.mode === "binocular" ? validPd(pd.binocular, 40, 85) : validPd(pd.right, 20, 45) && validPd(pd.left, 20, 45));
@@ -561,7 +562,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3">
         <Button variant="secondary" size="sm" onClick={() => setOpen(true)}><ScanLine className="h-4 w-4" />Scan printed Rx</Button>
-        <p className="text-xs text-navy-500">Use your camera or a photo. Review before filling the fields.</p>
+        <p className="text-xs text-navy-500">Experimental printed-text scan. Handwriting is not reliably supported; review every value.</p>
       </div>
     );
   }
@@ -569,7 +570,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   return (
     <section className="space-y-4 rounded-xl border border-teal-200 bg-white p-4" aria-label="Printed prescription scanner">
       <div className="flex items-start justify-between gap-3">
-        <div><h3 className="font-semibold text-navy-900">Scan printed prescription</h3><p className="mt-1 text-xs text-navy-500">Processed on this device. LensWise does not upload or save photos or text. Your camera app may keep a copy when you use Take a photo; crop out identifying details before scanning.</p></div>
+        <div><h3 className="font-semibold text-navy-900">Scan printed prescription <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">Experimental</span></h3><p className="mt-1 text-xs text-navy-500">Processed on this device. LensWise does not upload or save photos or text. Your camera app may keep a copy when you use Take a photo; crop out identifying details before scanning.</p><p className="mt-2 text-xs text-amber-800">Printed text only. Faint or angled photos can fail even when readable to a person, and handwritten values are not reliably supported. Keep manual entry available.</p></div>
         <Button variant="ghost" size="icon" onClick={close} aria-label="Close prescription scanner"><X className="h-4 w-4" /></Button>
       </div>
       <input ref={photoInput} type="file" accept="image/*" className="hidden" aria-label="Choose prescription photo" onChange={(event) => { void loadPhoto(event.target.files?.[0]); event.target.value = ""; }} />
@@ -602,7 +603,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
       {result ? (
         <div className="space-y-4">
-          <p className="text-xs font-medium text-navy-600" role="status">{[result.od, result.os].filter((eye) => eye.sphere !== null && eye.cylinder !== null && (eye.cylinder === 0 || eye.axis !== null)).length} of 2 eye rows read. Any blank field needs a manual check; signs and ADD always need review.</p>
+          <p className="text-xs font-medium text-navy-600" role="status">{completeEyeRows} of 2 eye rows complete for review. Any blank field needs a manual check; signs and ADD always need review.</p>
+          {completeEyeRows === 0 ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">No complete eye row could be read reliably. Your prescription has not been changed. You can discard this scan and enter the values manually, or try another straight-on, well-lit photo. Do not fill missing values by guessing.</p> : null}
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Check every value against the paper, including signs, ADD, and axis.</p>{result.warnings.length ? <ul className="mt-2 list-disc space-y-1 pl-4">{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}</div>
           <div className="grid gap-3 sm:grid-cols-2">{(["od", "os"] as const).map((eye) => <ReviewEye key={eye} eye={eye} values={result[eye]} onChange={(field, value) => updateEye(eye, field, value)} />)}</div>
           {pd ? <div className="rounded-lg border border-navy-100 p-3"><label className="flex items-center gap-2 text-sm font-medium text-navy-700"><input type="checkbox" checked={includePd} onChange={(event) => { setIncludePd(event.target.checked); setConfirmed(false); }} className="h-4 w-4 accent-teal-600" />Also fill the printed PD (mm)</label>{includePd ? <div className="mt-3 flex flex-wrap gap-3">{(pd.mode === "binocular" ? ["binocular"] : ["right", "left"]).map((field) => <div key={field} className="w-28"><Label htmlFor={`scan-pd-${field}`} className="text-xs">{field === "binocular" ? "Total PD" : field === "right" ? "OD / Right" : "OS / Left"}</Label><Input id={`scan-pd-${field}`} inputMode="decimal" maxLength={4} value={pd[field as "binocular" | "right" | "left"]} onChange={(event) => { const value = sanitizePupillaryDistanceValue(event.target.value); setResult((current) => current?.pupillaryDistance ? { ...current, pupillaryDistance: { ...current.pupillaryDistance, [field]: value } } : current); setConfirmed(false); }} /></div>)}</div> : null}</div> : null}
