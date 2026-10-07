@@ -8,6 +8,23 @@ const tableHeadings = (offset = 0): PrescriptionScanWord[] => [
   word("Sphere", 100, offset), word("Cylinder", 200, offset), word("Axis", 300, offset),
   word("Add", 400, offset), word("Prism", 500, offset), word("Base", 600, offset),
 ];
+const mergedHeading = (terms: [string, number][], top = 0, separator = "|"): PrescriptionScanWord => {
+  const symbols: NonNullable<PrescriptionScanWord["symbols"]> = [];
+  for (let index = 0; index < terms.length; index++) {
+    const [text, left] = terms[index];
+    for (let letter = 0; letter < text.length; letter++) symbols.push({
+      text: text[letter], confidence: 98,
+      bbox: { x0: left + letter * 8, y0: top, x1: left + letter * 8 + 7, y1: top + 18 },
+    });
+    if (separator) symbols.push({ text: separator, confidence: 95,
+      bbox: { x0: left + text.length * 8, y0: top, x1: left + text.length * 8 + 2, y1: top + 18 },
+    });
+  }
+  return {
+    text: terms.map(([text]) => text).join(separator) + separator, confidence: 14, symbols,
+    bbox: { x0: symbols[0].bbox.x0, y0: top, x1: symbols[symbols.length - 1].bbox.x1, y1: top + 18 },
+  };
+};
 
 describe("printed prescription scan parsing", () => {
   it("reads a signed OD/OS table and combined PD without retaining identity", () => {
@@ -685,5 +702,91 @@ describe("printed prescription scan parsing", () => {
     expect(result.requiresRowReview).toBeUndefined();
     expect(result.os).toEqual({ sphere: 1.75, cylinder: 0, axis: null, add: null });
     expect(findPrescriptionScanRegions(words)!.rows.os).toBeDefined();
+  });
+
+  const mergedTable = (heading: PrescriptionScanWord): PrescriptionScanWord[] => [heading,
+    word("Axis", 360, 0), word("Add", 460, 0), word("Prism", 560, 0),
+    word("OD", 0, 50), word("+2.00", 160, 50, 95, 50), word("D.S.", 260, 50, 95, 50), word("+2.50", 460, 50),
+    word("OS", 0, 100), word("+1.75", 160, 100, 95, 50), word("-0.25", 260, 100, 95, 50), word("35", 360, 100), word("+2.50", 460, 100),
+  ];
+
+  it("recovers merged Balance/Sphere/Cylinder headings only from actual high-confidence character boxes", () => {
+    const heading = mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]);
+    heading.text = `‘${heading.text}`;
+    heading.bbox.x0 -= 4;
+    heading.symbols!.unshift({ text: "‘", confidence: 70, bbox: { x0: 36, y0: 0, x1: 38, y1: 18 } });
+    const words = mergedTable(heading);
+    const result = parsePrescriptionScan("Balance|Sphere|Cylinder| Axis Add Prism", words);
+    expect(result.od).toEqual({ sphere: 2, cylinder: 0, axis: null, add: 2.5 });
+    expect(result.os).toEqual({ sphere: 1.75, cylinder: -0.25, axis: 35, add: 2.5 });
+    expect(result.hasAlignedTable).toBe(true);
+    const regions = findPrescriptionScanRegions(words)!;
+    // Letter envelopes produce these real centers; proportional splitting
+    // of the whole word would put the Balance/Sphere midpoint elsewhere.
+    expect(regions.cells.od!.sphere!.left).toBe(125);
+    expect(regions.cells.od!.sphere!.width).toBe(113);
+  });
+
+  it("accepts adjacent exact heading terms when observed symbols supply separate positions", () => {
+    const heading = mergedHeading([["Sphere", 160], ["Cylinder", 260]], 0, "");
+    const result = parsePrescriptionScan("SphereCylinder Axis Add Prism", mergedTable(heading));
+    expect(result.od.sphere).toBe(2);
+    expect(result.os.axis).toBe(35);
+  });
+
+  it.each(["missing", "low confidence", "missing confidence", "outside word", "nonfinite", "zero height", "reordered", "text mismatch"])("refuses a merged heading with %s symbol evidence", (failure) => {
+    const heading = mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]);
+    const symbol = heading.symbols!.find((item) => item.text === "S")!;
+    if (failure === "missing") delete heading.symbols;
+    if (failure === "low confidence") symbol.confidence = 89;
+    if (failure === "missing confidence") delete symbol.confidence;
+    if (failure === "outside word") symbol.bbox.y0 = -1;
+    if (failure === "nonfinite") symbol.bbox.x0 = Number.NaN;
+    if (failure === "zero height") symbol.bbox.y1 = symbol.bbox.y0;
+    if (failure === "reordered") symbol.bbox.x0 = 50;
+    if (failure === "text mismatch") symbol.text = "5";
+    const words = mergedTable(heading);
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    expect(parsePrescriptionScan("Balance Sphere Cylinder Axis Add Prism", words).od.sphere).toBeNull();
+  });
+
+  it.each([
+    { terms: [["Mystery", 40], ["Sphere", 160], ["Cylinder", 260]] },
+    { terms: [["Sphere1", 160], ["Cylinder", 260]] },
+  ])("does not split unknown or numeric heading text", ({ terms }) => {
+    const words = mergedTable(mergedHeading(terms as [string, number][]));
+    expect(findPrescriptionScanRegions(words)).toBeNull();
+    expect(parsePrescriptionScan("Balance Sphere Cylinder Axis Add Prism", words).od.sphere).toBeNull();
+  });
+
+  it("does not transform numerical cells even when they carry character geometry", () => {
+    const words = mergedTable(mergedHeading([["Balance", 40], ["Sphere", 160], ["Cylinder", 260]]));
+    const sphere = words.find((entry) => entry.text === "+1.75")!;
+    sphere.text = "+1.75/-2.00";
+    sphere.symbols = [...sphere.text].map((text, index) => ({ text, confidence: 98,
+      bbox: { x0: 160 + index * 4, y0: 100, x1: 163 + index * 4, y1: 118 },
+    }));
+    const result = parsePrescriptionScan("Balance Sphere Cylinder Axis Add Prism", words);
+    expect(result.os.sphere).toBeNull();
+    expect(result.warnings.join(" ")).toContain("sphere has duplicate or unclear");
+    expect(sphere.text).toBe("+1.75/-2.00");
+  });
+
+  it("keeps duplicate and tilted table guards after splitting observed heading symbols", () => {
+    const duplicate = mergedTable(mergedHeading([["Sphere", 100], ["Sphere", 200], ["Cylinder", 280]]));
+    expect(findPrescriptionScanRegions(duplicate)).toBeNull();
+    expect(parsePrescriptionScan("", duplicate).od.sphere).toBeNull();
+    const tilted = mergedHeading([["Sphere", 100], ["Cylinder", 250], ["Axis", 400]]);
+    for (const symbol of tilted.symbols!) {
+      symbol.bbox.y0 += symbol.bbox.x0 * 0.08;
+      symbol.bbox.y1 += symbol.bbox.x0 * 0.08;
+    }
+    tilted.bbox.y0 = Math.min(...tilted.symbols!.map((symbol) => symbol.bbox.y0));
+    tilted.bbox.y1 = Math.max(...tilted.symbols!.map((symbol) => symbol.bbox.y1));
+    const words = [tilted, word("OD", 0, 90), word("-2.00", 100, 90), word("-0.50", 250, 90), word("180", 400, 90)];
+    const result = parsePrescriptionScan("OD -2.00 -0.50 180", words);
+    expect(result.requiresAlignment).toBe(true);
+    expect(result.od.sphere).toBeNull();
+    expect(findPrescriptionScanRegions(words)).toBeNull();
   });
 });

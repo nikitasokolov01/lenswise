@@ -38,6 +38,12 @@ export interface PrescriptionScanWord {
   text: string;
   confidence?: number;
   bbox: { x0: number; y0: number; x1: number; y1: number };
+  /** Observed OCR characters can retain real column positions in merged headings. */
+  symbols?: {
+    text: string;
+    confidence?: number;
+    bbox: { x0: number; y0: number; x1: number; y1: number };
+  }[];
 }
 
 export interface PrescriptionScanRegion {
@@ -159,6 +165,42 @@ function tableWordEye(text: string): "od" | "os" | null {
 
 const isGridPunctuation = (text: string) => /^[\p{P}\p{S}\s]+$/u.test(text);
 
+/** Split only recognized heading letters, never interpolate a merged word box. */
+function splitMergedHeadings(word: PrescriptionScanWord): PrescriptionScanWord[] {
+  const symbols = word.symbols;
+  if (!symbols?.length || /\p{N}/u.test(word.text)) return [word];
+  const observed = symbols.filter((symbol) => !/^\s*$/.test(symbol.text));
+  if (observed.map((symbol) => symbol.text).join("").toUpperCase() !== word.text.replace(/\s/g, "").toUpperCase()) return [word];
+  if (observed.some((symbol, index) => {
+    const box = symbol.bbox;
+    const previous = observed[index - 1];
+    return !(/^[a-z]$/i.test(symbol.text) || isGridPunctuation(symbol.text))
+      || !Object.values(box).every(Number.isFinite) || box.x1 <= box.x0 || box.y1 <= box.y0
+      || box.x0 < word.bbox.x0 || box.x1 > word.bbox.x1 || box.y0 < word.bbox.y0 || box.y1 > word.bbox.y1
+      || previous && (box.x0 < previous.bbox.x0 || box.x0 + box.x1 < previous.bbox.x0 + previous.bbox.x1)
+      || /^[a-z]$/i.test(symbol.text) && (!Number.isFinite(symbol.confidence) || symbol.confidence! < 90 || symbol.confidence! > 100);
+  })) return [word];
+  const letters = observed.filter((symbol) => /^[a-z]$/i.test(symbol.text));
+  const text = letters.map((symbol) => symbol.text).join("").toUpperCase();
+  const headings: PrescriptionScanWord[] = [];
+  let offset = 0;
+  while (offset < text.length) {
+    const term = text.slice(offset).match(/^(?:BALANCE|SPHERE|SPH|CYLINDER|CYL|AXIS|AX|ADDITION|ADD|PRISM|BASE|PD|FAR|NEAR|SEGHT|OCHT)/)?.[0];
+    if (!term) return [word];
+    const characters = letters.slice(offset, offset + term.length);
+    const bbox = {
+      x0: Math.min(...characters.map((symbol) => symbol.bbox.x0)),
+      y0: Math.min(...characters.map((symbol) => symbol.bbox.y0)),
+      x1: Math.max(...characters.map((symbol) => symbol.bbox.x1)),
+      y1: Math.max(...characters.map((symbol) => symbol.bbox.y1)),
+    };
+    if (headings.length && bbox.x0 < headings[headings.length - 1].bbox.x1) return [word];
+    headings.push({ text: term === "SEGHT" ? "Seg Ht" : term === "OCHT" ? "OC Ht" : term, confidence: Math.min(...characters.map((symbol) => symbol.confidence!)), bbox, symbols: characters });
+    offset += term.length;
+  }
+  return headings.length > 1 && headings.some((heading) => wordColumnName(heading.text)) ? headings : [word];
+}
+
 interface SpatialEyeGroup {
   eye: "od" | "os";
   labels: PrescriptionScanWord[];
@@ -190,7 +232,7 @@ function spatialLayouts(words: PrescriptionScanWord[]): {
   usable: PrescriptionScanWord[]; layouts: SpatialTableLayout[]; ambiguous: boolean; requiresAlignment: boolean; requiresRowReview: boolean;
 } {
   const usable = words.filter((word) => word.text.trim() && Object.values(word.bbox).every(Number.isFinite)
-    && word.bbox.x1 > word.bbox.x0 && word.bbox.y1 > word.bbox.y0);
+    && word.bbox.x1 > word.bbox.x0 && word.bbox.y1 > word.bbox.y0).flatMap(splitMergedHeadings);
   const sameBand = (anchor: PrescriptionScanWord) => usable.filter((word) =>
     Math.abs(wordY(word) - wordY(anchor)) <= Math.max(wordHeight(word), wordHeight(anchor)) * 0.7)
     .sort((a, b) => wordX(a) - wordX(b));

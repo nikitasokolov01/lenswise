@@ -390,7 +390,10 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       let regionWords = firstWords;
       let parsed = parsePrescriptionScan(recognized.data.text, firstWords);
       let confidence = recognized.data.confidence;
-      if (!parsed.requiresRescan && !parsed.requiresAlignment && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+      // Table borders and unrelated text can lower document confidence even
+      // when every optical cell passed its own checks. Recheck missing values;
+      // a complete reading goes straight to the mandatory manual review.
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && !reviewedScanPrescription(parsed)) {
         readingStatus = "Enhancing faint text and checking both eye rows…";
         setProgress(0);
         setStatus(readingStatus);
@@ -450,7 +453,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
           if (parsed.requiresRescan) break;
         }
       }
-      if (!parsed.requiresRescan && !parsed.requiresAlignment && regions && (!reviewedScanPrescription(parsed) || confidence < 70)) {
+      if (!parsed.requiresRescan && !parsed.requiresAlignment && regions && !reviewedScanPrescription(parsed)) {
         // Cell retries retain the original observed table headings/eye labels.
         // OCR recognizes the printed characters; there is no digit substitution
         // or assumption that an unlabelled second row belongs to the left eye.
@@ -526,7 +529,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         }
         return true;
       });
-      if (confidence < 70) parsed.warnings.unshift("The photo was difficult to read. Carefully check every value, especially plus/minus signs and axis.");
+      if (confidence < 70) parsed.warnings.unshift("Some text was uncertain. Carefully check every value, especially plus/minus signs and axis.");
       setResult(parsed);
       setConfirmed(false);
       setIncludePd(true);
