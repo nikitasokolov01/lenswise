@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { Camera, Check, RotateCcw, Upload, X } from "lucide-react";
+import { Camera, Check, RotateCcw, ScanEye, SwitchCamera, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { estimateCameraPd, type PhotoPoint } from "@/lib/cameraPd";
+import { cameraPdPhotoSize, estimateCameraPd, type PhotoPoint } from "@/lib/cameraPd";
 import { sanitizePupillaryDistanceValue } from "@/lib/pupillaryDistance";
+import { LocalPupilDetector, validateSuggestedPupils } from "@/lib/pupilDetection";
 
 const markLabels = ["Reference left end", "Reference right end", "Pupil on image left", "Pupil on image right"];
 
@@ -16,8 +17,12 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
   const [open, setOpen] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [detecting, setDetecting] = useState(false);
+  const [detectionNote, setDetectionNote] = useState("");
   const [error, setError] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [photoNote, setPhotoNote] = useState("");
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [marks, setMarks] = useState<(PhotoPoint | null)[]>([null, null, null, null]);
   const [activeMark, setActiveMark] = useState(0);
@@ -33,6 +38,9 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
   const imageOperationRef = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const captureRef = useRef<HTMLInputElement>(null);
+  const detectorRef = useRef<LocalPupilDetector | null>(null);
+  const detectionOperationRef = useRef(0);
+  const manualPupilRevisionRef = useRef(0);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -42,10 +50,17 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
   }
 
   function clearPhoto() {
+    detectionOperationRef.current += 1;
+    manualPupilRevisionRef.current += 1;
+    detectorRef.current?.dispose();
+    detectorRef.current = null;
+    setDetecting(false);
+    setDetectionNote("");
     imageOperationRef.current += 1;
     if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
     photoUrlRef.current = null;
     setPhoto(null);
+    setPhotoNote("");
     setImageSize({ width: 0, height: 0 });
     setMarks([null, null, null, null]);
     setActiveMark(0);
@@ -73,7 +88,43 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
     imageOperationRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+    detectionOperationRef.current += 1;
+    detectorRef.current?.dispose();
   }, []);
+
+  async function findPupils(url: string, size: { width: number; height: number }) {
+    const operation = ++detectionOperationRef.current;
+    const manualRevision = manualPupilRevisionRef.current;
+    setDetecting(true);
+    setDetectionNote("Finding pupil centers locally… The first scan loads the face model.");
+    if (!detectorRef.current) detectorRef.current = new LocalPupilDetector();
+    try {
+      const output = await detectorRef.current.detect(url);
+      if (operation !== detectionOperationRef.current) return;
+      const suggestion = validateSuggestedPupils(output, size);
+      if (!suggestion.ok) {
+        setDetectionNote(suggestion.message);
+        return;
+      }
+      if (manualRevision !== manualPupilRevisionRef.current) {
+        setDetectionNote("Your manual marks were kept. Select Find pupil centers again if you want to replace them with suggestions.");
+        return;
+      }
+      setMarks((current) => [current[0], current[1], suggestion.imageLeft, suggestion.imageRight]);
+      setDetectionNote("Pupil centers suggested. Check both marks, then mark the two ends of your measured reference.");
+    } catch (cause) {
+      if (operation !== detectionOperationRef.current) return;
+      setDetectionNote(cause instanceof Error ? cause.message : "Automatic marking could not run. Place the marks manually.");
+    } finally {
+      if (operation === detectionOperationRef.current) setDetecting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (photo) void findPupils(photo, imageSize);
+    // Image dimensions are set in the same update as this local photo URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo]);
 
   const result = useMemo(() => {
     const [referenceStart, referenceEnd, pupilStart, pupilEnd] = marks;
@@ -86,7 +137,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
     setVerified(false);
   }, [result]);
 
-  async function startCamera() {
+  async function startCamera(cameraFacingMode = facingMode) {
     stopCamera();
     clearPhoto();
     setError("");
@@ -98,7 +149,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
     setBusy(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: { ideal: cameraFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
       if (operation !== operationRef.current) {
@@ -137,8 +188,52 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
     const image = new window.Image();
     image.onload = () => {
       if (imageOperation !== imageOperationRef.current) return;
-      setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
-      setPhoto(url);
+      const size = cameraPdPhotoSize(image.naturalWidth, image.naturalHeight);
+      if (!size) {
+        clearPhoto();
+        setError("This photo is unusually large or has invalid dimensions. Use the live camera here, or export a smaller copy under 50 megapixels.");
+        return;
+      }
+      if (size.width === image.naturalWidth && size.height === image.naturalHeight) {
+        setImageSize(size);
+        setPhoto(url);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = size.width;
+      canvas.height = size.height;
+      try {
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Photo resizing is unavailable.");
+        context.fillStyle = "white";
+        context.fillRect(0, 0, size.width, size.height);
+        context.drawImage(image, 0, 0, size.width, size.height);
+        canvas.toBlob((resized) => {
+          try {
+            if (imageOperation !== imageOperationRef.current) return;
+            if (!resized) {
+              clearPhoto();
+              setError("The photo could not be resized locally. Use the live camera or choose a smaller photo.");
+              return;
+            }
+            const resizedUrl = URL.createObjectURL(resized);
+            URL.revokeObjectURL(url);
+            photoUrlRef.current = resizedUrl;
+            setImageSize(size);
+            setPhotoNote("Photo resized on this device for a faster scan. Its proportions are unchanged; nothing was uploaded.");
+            setPhoto(resizedUrl);
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+        }, "image/jpeg", 0.95);
+      } catch {
+        canvas.width = 0;
+        canvas.height = 0;
+        if (imageOperation !== imageOperationRef.current) return;
+        clearPhoto();
+        setError("The photo could not be resized locally. Use the live camera or choose a smaller photo.");
+      }
     };
     image.onerror = () => {
       if (imageOperation !== imageOperationRef.current) return;
@@ -156,16 +251,21 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
     canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
     const operation = operationRef.current;
+    const imageOperation = imageOperationRef.current;
     canvas.toBlob((blob) => {
-      if (operation !== operationRef.current) return;
-      if (blob) loadPhoto(blob);
-      else setError("The camera photo could not be captured. Try again.");
-      canvas.width = 0;
-      canvas.height = 0;
+      try {
+        if (operation !== operationRef.current || imageOperation !== imageOperationRef.current) return;
+        if (blob) loadPhoto(blob);
+        else setError("The camera photo could not be captured. Try again.");
+      } finally {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     }, "image/jpeg", 0.95);
   }
 
   function placeMark(point: PhotoPoint) {
+    if (activeMark >= 2) manualPupilRevisionRef.current += 1;
     setMarks((current) => current.map((mark, index) => index === activeMark ? point : mark));
     setActiveMark((current) => Math.min(current + 1, 3));
   }
@@ -184,6 +284,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
       placeMark(marks[activeMark] ?? { x: 0.5, y: 0.5 });
     } else if (directions[event.key]) {
       event.preventDefault();
+      if (activeMark >= 2) manualPupilRevisionRef.current += 1;
       const [dx, dy] = directions[event.key];
       const current = marks[activeMark] ?? { x: 0.5, y: 0.5 };
       const increment = event.shiftKey ? 10 : 1;
@@ -211,7 +312,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 id="camera-pd-title" className="text-xl font-semibold">Camera PD estimate</h2>
-              <p className="mt-1 text-sm text-navy-600">A known-size reference and four marks are required.</p>
+              <p className="mt-1 text-sm text-navy-600">Automatic pupil suggestions, with a measured reference for scale.</p>
             </div>
             <Button variant="ghost" size="icon" aria-label="Close camera PD" onClick={close}><X className="h-5 w-5" /></Button>
           </div>
@@ -223,16 +324,31 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
           </div>
           <p className="text-xs text-navy-500">LensWise does not upload or save this photo and discards its copy when this window closes. Your device’s camera app may keep a copy when you use Take photo. Obtain the patient’s agreement first; use a blank reference with no personal information.</p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="accent" size="sm" disabled={busy} onClick={startCamera}><Camera className="h-4 w-4" /> {busy ? "Starting camera…" : "Start live camera"}</Button>
+            <Button variant="accent" size="sm" disabled={busy} onClick={() => void startCamera()}><Camera className="h-4 w-4" /> {busy ? "Starting camera…" : "Start live camera"}</Button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => { const next = facingMode === "environment" ? "user" : "environment"; setFacingMode(next); if (cameraActive) void startCamera(next); }}><SwitchCamera className="h-4 w-4" />{facingMode === "environment" ? "Rear camera" : "Front camera"}</Button>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => captureRef.current?.click()}>Take photo</Button>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => uploadRef.current?.click()}><Upload className="h-4 w-4" /> Choose photo</Button>
-            <input ref={captureRef} type="file" accept="image/*" capture="environment" className="hidden" aria-label="Take a PD reference photo" onChange={(event) => { const file = event.target.files?.[0]; if (file) loadPhoto(file); event.target.value = ""; }} />
+            <input ref={captureRef} type="file" accept="image/*" capture={facingMode} className="hidden" aria-label="Take a PD reference photo" onChange={(event) => { const file = event.target.files?.[0]; if (file) loadPhoto(file); event.target.value = ""; }} />
             <input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label="Choose a PD reference photo" onChange={(event) => { const file = event.target.files?.[0]; if (file) loadPhoto(file); event.target.value = ""; }} />
           </div>
           {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-          <video ref={videoRef} playsInline muted className={`w-full rounded-xl bg-navy-950 ${cameraActive || busy ? "block" : "hidden"}`} />
+          <div className={`relative overflow-hidden rounded-xl bg-navy-950 ${cameraActive || busy ? "block" : "hidden"}`}>
+            <video ref={videoRef} playsInline muted className="block w-full" />
+            <svg aria-hidden="true" viewBox="0 0 400 300" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
+              <ellipse cx="200" cy="126" rx="66" ry="94" fill="none" stroke="white" strokeWidth="2" strokeDasharray="7 5" vectorEffect="non-scaling-stroke" />
+              <path d="M68 300 Q74 249 140 239 L160 215 M240 215 L260 239 Q326 249 332 300" fill="none" stroke="white" strokeWidth="2" strokeDasharray="7 5" vectorEffect="non-scaling-stroke" />
+              <path d="M131 113 H269" fill="none" stroke="#9fe3d6" strokeWidth="2" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" />
+            </svg>
+          </div>
+          {cameraActive ? <p className="text-xs text-navy-500">Center the face in the outline and keep the eyes level. The outline is a framing guide; it does not measure distance or calibrate the camera. Safari does not expose iPhone TrueDepth data to this page.</p> : null}
           {cameraActive ? <div className="flex gap-2"><Button variant="accent" onClick={capturePhoto}>Capture reference photo</Button><Button variant="secondary" onClick={stopCamera}>Stop camera</Button></div> : null}
           {photo ? <>
+            {photoNote ? <p className="text-xs text-navy-500">{photoNote}</p> : null}
+            <div className="space-y-2 rounded-xl border border-teal-100 bg-teal-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Automatic pupil marks</p><Button variant="secondary" size="sm" disabled={detecting} onClick={() => void findPupils(photo, imageSize)}><ScanEye className="h-4 w-4" />{detecting ? "Finding pupils…" : "Find pupil centers"}</Button></div>
+              <p className="text-sm text-navy-600" role="status" aria-live="polite">{detectionNote}</p>
+              <p className="text-xs text-navy-500">Check suggested iris centers against the actual pupils. You can reposition either mark manually. A measured reference is still needed to calculate millimeters.</p>
+            </div>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div className="max-w-48">
                 <Label htmlFor="camera-pd-reference">Reference span (mm)</Label>
@@ -241,7 +357,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setReferenceMm("50")}>50 mm ruler</Button>
                 <Button variant="secondary" size="sm" onClick={() => setReferenceMm("85.6")}>85.6 mm card</Button>
-                <Button variant="ghost" size="sm" onClick={() => { setMarks([null, null, null, null]); setActiveMark(0); }}><RotateCcw className="h-4 w-4" /> Reset marks</Button>
+                <Button variant="ghost" size="sm" onClick={() => { manualPupilRevisionRef.current += 1; setMarks([null, null, null, null]); setActiveMark(0); }}><RotateCcw className="h-4 w-4" /> Reset marks</Button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Photo marks">

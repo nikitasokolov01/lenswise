@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4032" height="3024" viewBox="0 0 4032 3024">
+  <rect width="4032" height="3024" fill="white"/>
+  <text x="300" y="600" font-family="Arial, sans-serif" font-size="140" fill="#10243e">LensWise non-face resize test</text>
+  <text x="300" y="840" font-family="Arial, sans-serif" font-size="90" fill="#0d7c82">4032 x 3024 pixels. No patient data.</text>
+  <rect x="300" y="1100" width="900" height="400" rx="24" fill="#edf8f5" stroke="#0d7c82" stroke-width="8"/>
+</svg>

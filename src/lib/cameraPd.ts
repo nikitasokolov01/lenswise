@@ -20,6 +20,14 @@ export type CameraPdResult =
   | { ok: true; binocularMm: number }
   | { ok: false; message: string };
 
+/** Uniform local resize keeps normalized marker positions and pixel ratios. */
+export function cameraPdPhotoSize(width: number, height: number): { width: number; height: number } | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0
+    || width > 12_000 || height > 12_000 || width * height > 50_000_000) return null;
+  const scale = Math.min(1, 2400 / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
 export function estimateCameraPd(
   landmarks: CameraPdLandmarks,
   imageSize: { width: number; height: number },

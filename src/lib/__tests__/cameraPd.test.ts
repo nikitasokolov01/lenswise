@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateCameraPd, type CameraPdLandmarks } from "@/lib/cameraPd";
+import { cameraPdPhotoSize, estimateCameraPd, type CameraPdLandmarks } from "@/lib/cameraPd";
 
 const image = { width: 1000, height: 1000 };
 const landmarks: CameraPdLandmarks = {
@@ -52,5 +52,32 @@ describe("calibrated camera PD estimate", () => {
 
   it("rejects implausible estimates instead of clamping them", () => {
     expect(estimateCameraPd(landmarks, image, 100).ok).toBe(false);
+  });
+});
+
+describe("local camera photo bounds", () => {
+  it("resizes a routine 12 MP iPhone photo uniformly", () => {
+    expect(cameraPdPhotoSize(4032, 3024)).toEqual({ width: 2400, height: 1800 });
+    expect(cameraPdPhotoSize(3024, 4032)).toEqual({ width: 1800, height: 2400 });
+  });
+
+  it("keeps an already bounded photo unchanged", () => {
+    expect(cameraPdPhotoSize(1280, 720)).toEqual({ width: 1280, height: 720 });
+  });
+
+  it("supports a 48 MP capture without passing its full area to inference", () => {
+    expect(cameraPdPhotoSize(8064, 6048)).toEqual({ width: 2400, height: 1800 });
+  });
+
+  it("retains the calibrated ratio after a uniform local resize", () => {
+    const original = { width: 4032, height: 3024 };
+    const resized = cameraPdPhotoSize(original.width, original.height)!;
+    expect(estimateCameraPd(landmarks, resized, 50)).toEqual(estimateCameraPd(landmarks, original, 50));
+  });
+
+  it("rejects invalid or abnormally huge decoded dimensions", () => {
+    for (const [width, height] of [[0, 1000], [Number.NaN, 1000], [Infinity, 1000], [20_000, 1000], [10_000, 10_000]]) {
+      expect(cameraPdPhotoSize(width, height)).toBeNull();
+    }
   });
 });
