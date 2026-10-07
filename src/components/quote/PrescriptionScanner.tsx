@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { Camera, Check, Loader2, RotateCw, ScanLine, Upload, X } from "lucide-react";
+import { Camera, Check, Crop as CropIcon, Loader2, RotateCw, ScanLine, Upload, X } from "lucide-react";
 import type { Worker } from "tesseract.js";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ import {
 import { sanitizePupillaryDistanceValue } from "@/lib/pupillaryDistance";
 import { cleanPrescriptionCellPixels, findPrescriptionCellInkBounds, normalizePrescriptionCellPixels, preparePrescriptionScanImages, type PreparedPrescriptionScanImages } from "@/lib/prescriptionScanImage";
 import { replacePrescriptionCellWords } from "@/lib/prescriptionScanRetry";
+import { prescriptionScanDiagnostics, type PrescriptionScanDiagnostics } from "@/lib/prescriptionScanDiagnostics";
 
 interface Crop { left: number; top: number; width: number; height: number }
 const FULL_CROP: Crop = { left: 0, top: 0, width: 1, height: 1 };
@@ -145,6 +146,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   const [open, setOpen] = useState(false);
   const [image, setImage] = useState<HTMLCanvasElement | null>(null);
   const [crop, setCrop] = useState<Crop>(FULL_CROP);
+  const [cropMode, setCropMode] = useState(false);
+  const [scannedCrop, setScannedCrop] = useState<Crop | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -152,6 +155,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<PrescriptionScanResult | null>(null);
+  const [scanDetails, setScanDetails] = useState<PrescriptionScanDiagnostics[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [includePd, setIncludePd] = useState(true);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -163,7 +167,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   const scanCleanup = useRef<(() => void) | null>(null);
   const scanAbort = useRef<(() => void) | null>(null);
   const epoch = useRef(0);
-  const cropStart = useRef<{ x: number; y: number } | null>(null);
+  const cropStart = useRef<{ pointerId: number; x: number; y: number; previous: Crop; next: Crop | null } | null>(null);
 
   function stopCamera() {
     stream.current?.getTracks().forEach((track) => track.stop());
@@ -179,12 +183,16 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
     void worker.current?.terminate();
     worker.current = null;
     setBusy(false);
+    setScanDetails([]);
   }
 
   function close() {
     cancelScan();
     stopCamera();
     setImage(null);
+    cropStart.current = null;
+    setCropMode(false);
+    setScannedCrop(null);
     setResult(null);
     setError("");
     setConfirmed(false);
@@ -215,9 +223,13 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 
   function showImage(canvas: HTMLCanvasElement) {
     stopCamera();
+    cropStart.current = null;
     setImage(canvas);
     setCrop(FULL_CROP);
+    setCropMode(false);
+    setScannedCrop(null);
     setResult(null);
+    setScanDetails([]);
     setConfirmed(false);
     setError("");
   }
@@ -250,6 +262,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 
   async function startCamera() {
     setError("");
+    setScanDetails([]);
     // Native capture also works when testing on a phone over a local HTTP IP.
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       captureInput.current?.click();
@@ -295,8 +308,12 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
     context.translate(rotated.width, 0);
     context.rotate(Math.PI / 2);
     context.drawImage(image, 0, 0);
+    cropStart.current = null;
     setImage(rotated);
     setCrop(FULL_CROP);
+    setCropMode(false);
+    setScannedCrop(null);
+    setScanDetails([]);
   }
 
   function pointerPosition(event: PointerEvent<HTMLDivElement>) {
@@ -308,25 +325,50 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   }
 
   function startCrop(event: PointerEvent<HTMLDivElement>) {
-    if (busy || result) return;
+    if (!cropMode || busy || result || cropStart.current || !event.isPrimary || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    cropStart.current = pointerPosition(event);
+    cropStart.current = { ...pointerPosition(event), pointerId: event.pointerId, previous: crop, next: null };
   }
 
   function dragCrop(event: PointerEvent<HTMLDivElement>) {
-    if (!cropStart.current || busy || result) return;
+    if (!cropMode || !cropStart.current || cropStart.current.pointerId !== event.pointerId || busy || result) return;
     const end = pointerPosition(event);
     const start = cropStart.current;
-    setCrop({ left: Math.min(start.x, end.x), top: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) });
+    start.next = { left: Math.min(start.x, end.x), top: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+    setCrop(start.next);
   }
 
-  function finishCrop() {
+  function finishCrop(event: PointerEvent<HTMLDivElement>) {
+    const gesture = cropStart.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
     cropStart.current = null;
-    setCrop((current) => current.width < 0.03 || current.height < 0.03 ? FULL_CROP : current);
+    setCrop(gesture.next && gesture.next.width >= 0.03 && gesture.next.height >= 0.03 ? gesture.next : gesture.previous);
+  }
+
+  function cancelCrop(event: PointerEvent<HTMLDivElement>) {
+    const gesture = cropStart.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    cropStart.current = null;
+    setCrop(gesture.previous);
+  }
+
+  function doneCropping() {
+    if (cropStart.current) setCrop(cropStart.current.previous);
+    cropStart.current = null;
+    setCropMode(false);
+  }
+
+  function resetCrop() {
+    cropStart.current = null;
+    setCrop(FULL_CROP);
+    setCropMode(false);
+    setScanDetails([]);
   }
 
   async function scanPhoto() {
-    if (!image) return;
+    if (!image || cropMode || cropStart.current) return;
+    setScannedCrop({ ...crop });
+    setScanDetails([]);
     setBusy(true);
     setError("");
     setProgress(0);
@@ -390,6 +432,12 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       let regionWords = firstWords;
       let parsed = parsePrescriptionScan(recognized.data.text, firstWords);
       let confidence = recognized.data.confidence;
+      const fullCrop = crop.left === 0 && crop.top === 0 && crop.width === 1 && crop.height === 1;
+      setScanDetails([prescriptionScanDiagnostics({
+        pass: "initial", sourceWidth: image.width, sourceHeight: image.height,
+        ocrWidth: prepared.grayscale.width, ocrHeight: prepared.grayscale.height,
+        fullCrop, words: firstWords, result: parsed,
+      })]);
       // Table borders and unrelated text can lower document confidence even
       // when every optical cell passed its own checks. Recheck missing values;
       // a complete reading goes straight to the mandatory manual review.
@@ -413,7 +461,14 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
         const retry = await untilCancelled(scanWorker.recognize(retryImages.getEnhanced(), {}, { text: true, blocks: true }));
         if (scanEpoch !== epoch.current) return;
         const retryWords = wordsFromBlocks(retry.data.blocks);
-        parsed = combinePrescriptionScanPasses(parsed, parsePrescriptionScan(retry.data.text, retryWords));
+        const retryParsed = parsePrescriptionScan(retry.data.text, retryWords);
+        const retryDetails = prescriptionScanDiagnostics({
+          pass: "enhanced", sourceWidth: image.width, sourceHeight: image.height,
+          ocrWidth: retryImages.getEnhanced().width, ocrHeight: retryImages.getEnhanced().height,
+          fullCrop: fullCrop && !area, words: retryWords, result: retryParsed,
+        });
+        setScanDetails((current) => [...current, retryDetails]);
+        parsed = combinePrescriptionScanPasses(parsed, retryParsed);
         // Coordinates must always be used with the image they came from.
         const retryRegions = findPrescriptionScanRegions(retryWords);
         if (retryRegions) { regions = retryRegions; regionSource = retryImages.grayscale; regionWords = retryWords; }
@@ -560,6 +615,8 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   const pd = result?.pupillaryDistance ?? null;
   const validPd = (value: string, min: number, max: number) => Boolean(value.trim()) && Number(value) >= min && Number(value) <= max;
   const pdComplete = !includePd || !pd || (pd.mode === "binocular" ? validPd(pd.binocular, 40, 85) : validPd(pd.right, 20, 45) && validPd(pd.left, 20, 45));
+  const displayedCrop = result && scannedCrop ? scannedCrop : crop;
+  const hasSelectedCrop = displayedCrop.left !== 0 || displayedCrop.top !== 0 || displayedCrop.width !== 1 || displayedCrop.height !== 1;
 
   if (!open) {
     return (
@@ -594,16 +651,18 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
       ) : null}
       {image ? (
         <div className="space-y-2">
-          {!result ? <p className="text-xs text-navy-500">Drag over the Rx table to crop. Keep the column headings and both eye labels inside the teal box.</p> : <p className="text-xs text-navy-500">Compare the values below with the original photo.</p>}
-          <div className={`relative overflow-hidden rounded-lg border border-navy-200 ${!result && !busy ? "touch-none cursor-crosshair" : ""}`} onPointerDown={startCrop} onPointerMove={dragCrop} onPointerUp={finishCrop} onPointerCancel={finishCrop}>
+          {!result ? <p className="text-xs text-navy-500">{cropMode ? "Drag over the Rx table to crop. Keep the column headings and both eye labels inside the teal box, then press Done cropping." : "The teal outline shows the area to scan. Choose Adjust crop to change it, or Reset crop for the full photo. You can scroll normally over the photo."}</p> : <p className="text-xs text-navy-500">Compare the values below with the original photo. The teal outline shows the selected area that was scanned.</p>}
+          <div className={`relative overflow-hidden rounded-lg border border-navy-200 ${cropMode && !result && !busy ? "touch-none cursor-crosshair" : "touch-auto"}`} onPointerDown={startCrop} onPointerMove={dragCrop} onPointerUp={finishCrop} onPointerCancel={cancelCrop} onLostPointerCapture={cancelCrop}>
             <canvas ref={previewCanvas} className="block h-auto w-full" role="img" aria-label="Local prescription photo for review" />
-            {!result ? <div className="pointer-events-none absolute border-2 border-teal-600 bg-teal-500/5" style={{ left: `${crop.left * 100}%`, top: `${crop.top * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }} /> : null}
+            <div className="pointer-events-none absolute border-2 border-teal-600 bg-teal-500/5" style={{ left: `${displayedCrop.left * 100}%`, top: `${displayedCrop.top * 100}%`, width: `${displayedCrop.width * 100}%`, height: `${displayedCrop.height * 100}%` }} />
           </div>
-          {!result && !busy ? <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={rotatePhoto}><RotateCw className="h-4 w-4" />Rotate</Button><Button variant="ghost" size="sm" onClick={() => setCrop(FULL_CROP)}>Reset crop</Button><Button variant="accent" size="sm" onClick={() => void scanPhoto()}><ScanLine className="h-4 w-4" />Read prescription</Button></div> : null}
+          <p className="text-xs font-medium text-teal-700" role="status" aria-live="polite">{result || busy ? "Area scanned" : "Area to scan"}: {hasSelectedCrop ? "Selected crop" : "Full photo"}{hasSelectedCrop ? ` (${Math.round(displayedCrop.width * image.width)} × ${Math.round(displayedCrop.height * image.height)} pixels)` : ""}.</p>
+          {!result && !busy ? <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={rotatePhoto}><RotateCw className="h-4 w-4" />Rotate</Button><Button variant="secondary" size="sm" aria-pressed={cropMode} onClick={() => cropMode ? doneCropping() : setCropMode(true)}><CropIcon className="h-4 w-4" />{cropMode ? "Done cropping" : "Adjust crop"}</Button><Button variant="ghost" size="sm" onClick={resetCrop}>Reset crop</Button><Button variant="accent" size="sm" disabled={cropMode} onClick={() => void scanPhoto()}><ScanLine className="h-4 w-4" />Read prescription</Button></div> : null}
         </div>
       ) : null}
       {busy ? <div className="space-y-2" role="status" aria-live="polite"><p className="flex items-center gap-2 text-sm text-teal-700"><Loader2 className="h-4 w-4 animate-spin" />{status}{progress > 0 ? ` ${progress}%` : ""}</p><div className="h-2 overflow-hidden rounded-full bg-teal-50"><div className="h-full bg-teal-600" style={{ width: `${Math.max(progress, 5)}%` }} /></div><Button size="sm" variant="ghost" onClick={cancelScan}>Cancel scan</Button></div> : null}
       {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
+      {!busy && scanDetails.length > 0 ? <ScanDetails passes={scanDetails} /> : null}
       {result ? (
         <div className="space-y-4">
           <p className="text-xs font-medium text-navy-600" role="status">{completeEyeRows} of 2 eye rows complete for review. Any blank field needs a manual check; signs and ADD always need review.</p>
@@ -614,12 +673,29 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
           <label className="flex items-start gap-2 text-sm text-navy-700"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-teal-600" />I checked both eyes, signs, axis, ADD, and any PD against the original prescription.</label>
           {!reviewed ? <p className="text-xs text-red-700">Choose sphere and cylinder for both eyes, plus axis whenever cylinder is not zero.</p> : null}
           {!pdComplete ? <p className="text-xs text-red-700">Check PD: total must be 40–85 mm, or 20–45 mm for each eye. Uncheck the PD option to enter it separately.</p> : null}
-          <div className="flex flex-wrap gap-2"><Button variant="accent" disabled={!confirmed || !reviewed || !pdComplete} onClick={() => { if (!confirmed || !reviewed || !pdComplete) return; onReviewed({ prescription: reviewed, pupillaryDistance: includePd ? pd : null }); close(); }}><Check className="h-4 w-4" />Fill prescription fields</Button><Button variant="secondary" onClick={() => { setResult(null); setConfirmed(false); }}>Scan again</Button><Button variant="ghost" onClick={close}>Discard</Button></div>
+          <div className="flex flex-wrap gap-2"><Button variant="accent" disabled={!confirmed || !reviewed || !pdComplete} onClick={() => { if (!confirmed || !reviewed || !pdComplete) return; onReviewed({ prescription: reviewed, pupillaryDistance: includePd ? pd : null }); close(); }}><Check className="h-4 w-4" />Fill prescription fields</Button><Button variant="secondary" onClick={() => { setResult(null); setConfirmed(false); setScanDetails([]); }}>Scan again</Button><Button variant="ghost" onClick={close}>Discard</Button></div>
           <p className="text-xs text-navy-500">The filled prescription remains a draft until you press Apply Prescription.</p>
         </div>
       ) : null}
     </section>
   );
+}
+
+/** Only fixed diagnostic metadata is displayed; no OCR text or clinical values. */
+function ScanDetails({ passes }: { passes: PrescriptionScanDiagnostics[] }) {
+  return <details className="rounded-lg border border-navy-100 bg-navy-50/40 p-3 text-xs text-navy-600">
+    <summary className="cursor-pointer font-medium text-navy-800">Scan details (no prescription text)</summary>
+    <p className="mt-2">Scanner 2026.10.07.2. These details stay on this device and clear when you close the scanner. If a scan fails, you can share a screenshot of this panel to help troubleshoot.</p>
+    <div className="mt-3 space-y-3">{passes.map((detail, index) => <div key={`${detail.pass}-${index}`} className="space-y-1 rounded-lg border border-navy-100 bg-white p-2">
+      <p className="font-semibold text-navy-800">{detail.pass === "initial" ? "First reading" : "Enhanced reading"}</p>
+      <p>Photo: {detail.sourcePixels.width} × {detail.sourcePixels.height} px · OCR: {detail.ocrPixels.width} × {detail.ocrPixels.height} px · {detail.fullCrop ? "Full photo" : "Cropped area"}</p>
+      <p>Words detected: {detail.wordCount} · Eye labels: OD {detail.eyeLabels.od}, OS {detail.eyeLabels.os}</p>
+      <p>Separate headings: SPH {detail.standaloneHeadings.sphere}, CYL {detail.standaloneHeadings.cylinder}, AXIS {detail.standaloneHeadings.axis}, ADD {detail.standaloneHeadings.add}</p>
+      <p>Merged heading candidates: {detail.mergedHeadings.candidates} · With character data: {detail.mergedHeadings.withSymbols} · Lowest letter confidence: {detail.mergedHeadings.minimumLetterConfidence ?? "unavailable"}</p>
+      {detail.mergedHeadings.candidates > 0 ? <p>Character text matches: {detail.mergedHeadings.symbolTextMatches} · Valid boxes: {detail.mergedHeadings.validSymbolBoxes} · Ordered boxes: {detail.mergedHeadings.orderedSymbolBoxes} · Missing confidence: {detail.mergedHeadings.missingLetterConfidence}</p> : null}
+      <p>Aligned table: {detail.table.aligned ? "yes" : "no"} · Eye anchors: OD {detail.table.anchors.od ? "yes" : "no"}, OS {detail.table.anchors.os ? "yes" : "no"} · Layout block: {detail.table.blocker.replace(/_/g, " ")}</p>
+    </div>)}</div>
+  </details>;
 }
 
 function ReviewEye({ eye, values, onChange }: { eye: "od" | "os"; values: ScannedEyeValues; onChange: (field: keyof ScannedEyeValues, value: string) => void }) {
