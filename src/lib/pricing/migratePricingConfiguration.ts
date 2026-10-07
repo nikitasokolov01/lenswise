@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, createDefaultTintConfig } from "@/lib/pricing/seedConfiguration";
+import { SCHEMA_VERSION, createDefaultTintConfig, createDefaultFrameAllowanceShortcuts } from "@/lib/pricing/seedConfiguration";
 
 /**
  * Migrates a raw, previously-persisted pricing configuration object forward
@@ -100,6 +100,9 @@ export function migratePricingConfiguration(raw: unknown): unknown {
   }
   if (version < 12) {
     migrated = migrateV11ToV12(migrated);
+  }
+  if (version < 13) {
+    migrated = migrateV12ToV13(migrated);
   }
 
   return migrated;
@@ -481,6 +484,17 @@ function migrateV11ToV12(obj: Record<string, unknown>): Record<string, unknown> 
     ...obj,
     adjustmentPresets: Array.isArray(obj.adjustmentPresets) ? obj.adjustmentPresets : [],
     schemaVersion: 12,
+  };
+}
+
+/** New quick choices start disabled so existing insurance defaults stay unchanged. */
+function migrateV12ToV13(obj: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...obj,
+    frameAllowanceShortcuts: typeof obj.frameAllowanceShortcuts === "object" && obj.frameAllowanceShortcuts !== null
+      ? obj.frameAllowanceShortcuts
+      : createDefaultFrameAllowanceShortcuts(),
+    schemaVersion: 13,
   };
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { MoneyField } from "@/components/ui/money-field";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
@@ -8,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { formatCents } from "@/lib/money";
 import type { Dispatch, ReactNode } from "react";
-import type { CoverageMethod, InsuranceCoverageInput, InsuranceMode, QuoteInput } from "@/lib/types";
+import type { CoverageMethod, FrameAllowanceShortcutsConfig, InsuranceCoverageInput, InsuranceMode, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
 interface InsuranceStepProps {
@@ -19,6 +20,7 @@ interface InsuranceStepProps {
   surfacingApplies: boolean;
   /** Whether a Blue Light option is selected (shows its coverage control). */
   blueLightApplies: boolean;
+  frameAllowanceShortcuts?: FrameAllowanceShortcutsConfig;
 }
 
 const MODES: { value: InsuranceMode; label: string; description: string }[] = [
@@ -59,6 +61,7 @@ export function InsuranceStep({
   preOverrideEstimateCents,
   surfacingApplies,
   blueLightApplies,
+  frameAllowanceShortcuts,
 }: InsuranceStepProps) {
   const mode = input.insurance.mode;
   const coverage = input.insurance.coverage;
@@ -127,12 +130,29 @@ export function InsuranceStep({
                 method={coverage.frameCoverage}
                 onChange={(method) => setCoverageMethod("frameCoverage", method)}
               />
-              <CoverageField
-                id="frame-allowance"
-                label="Frame allowance"
-                valueCents={coverage.frameAllowanceCents}
-                onChangeCents={(cents) => setCoverage("frameAllowanceCents", cents)}
-              />
+              <div>
+                <CoverageField
+                  id="frame-allowance"
+                  label="Frame allowance"
+                  valueCents={coverage.frameAllowanceCents}
+                  onChangeCents={(cents) => setCoverage("frameAllowanceCents", cents)}
+                />
+                {frameAllowanceShortcuts?.enabled && frameAllowanceShortcuts.amountsCents.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Frame allowance quick choices">
+                    {frameAllowanceShortcuts.amountsCents.map((amount, index) => (
+                      <Button
+                        key={`${amount}-${index}`}
+                        variant={coverage.frameAllowanceCents === amount ? "accent" : "secondary"}
+                        size="sm"
+                        aria-pressed={coverage.frameAllowanceCents === amount}
+                        onClick={() => setCoverage("frameAllowanceCents", amount)}
+                      >
+                        {formatCents(amount)}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </CoverageGroup>
 
             <CoverageGroup title="Lenses">

@@ -136,4 +136,26 @@ describe("migratePricingConfiguration", () => {
     expect(pricingConfigurationSchema.safeParse({ ...config, adjustmentPresets: [{ ...preset, type: "percent_discount", percent: 101 }] }).success).toBe(false);
     expect(pricingConfigurationSchema.safeParse({ ...config, adjustmentPresets: [{ ...preset, label: " " }] }).success).toBe(false);
   });
+
+  it("adds disabled allowance shortcuts to v12 without replacing an office's defaults", () => {
+    const { frameAllowanceShortcuts: _shortcuts, ...legacy } = createDefaultConfiguration();
+    const migrated = migratePricingConfiguration({
+      ...legacy, schemaVersion: 12,
+      defaultInsuranceCoverage: { ...legacy.defaultInsuranceCoverage, frameAllowanceCents: 17500 },
+    }) as Record<string, unknown>;
+    expect(migrated.frameAllowanceShortcuts).toEqual({ enabled: false, amountsCents: [10000, 20000, 32500] });
+    expect((migrated.defaultInsuranceCoverage as Record<string, unknown>).frameAllowanceCents).toBe(17500);
+    expect(pricingConfigurationSchema.safeParse(migrated).success).toBe(true);
+  });
+
+  it("keeps custom allowance shortcuts through migration and limits the choices to three distinct valid amounts", () => {
+    const config = createDefaultConfiguration();
+    const shortcuts = { enabled: true, amountsCents: [8500, 15000] };
+    const migrated = migratePricingConfiguration({ ...config, schemaVersion: 12, frameAllowanceShortcuts: shortcuts }) as Record<string, unknown>;
+    expect(migrated.frameAllowanceShortcuts).toEqual(shortcuts);
+    for (const amountsCents of [[1, 2, 3, 4], [10000, 10000], [-1], [1.5]]) {
+      expect(pricingConfigurationSchema.safeParse({ ...config, frameAllowanceShortcuts: { enabled: true, amountsCents } }).success).toBe(false);
+    }
+    expect(pricingConfigurationSchema.safeParse({ ...config, frameAllowanceShortcuts: { enabled: true, amountsCents: [] } }).success).toBe(true);
+  });
 });

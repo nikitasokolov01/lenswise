@@ -311,6 +311,12 @@ export interface AdjustmentPresetConfig {
   sortOrder: number;
 }
 
+/** Optional office-wide frame allowance quick choices (maximum three). */
+export interface FrameAllowanceShortcutsConfig {
+  enabled: boolean;
+  amountsCents: Money[];
+}
+
 export interface PricingConfiguration {
   schemaVersion: number;
   officeName: string;
@@ -354,6 +360,7 @@ export interface PricingConfiguration {
   highCylinderThresholdDiopters: number;
   defaultInsuranceCoverage: DefaultInsuranceCoverage;
   adjustmentPresets: AdjustmentPresetConfig[];
+  frameAllowanceShortcuts: FrameAllowanceShortcutsConfig;
   updatedAt: string;
 }
 

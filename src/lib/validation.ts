@@ -162,6 +162,11 @@ export const pricingConfigurationSchema = z.object({
     active: z.boolean(),
     sortOrder: z.number(),
   })),
+  frameAllowanceShortcuts: z.object({
+    enabled: z.boolean(),
+    amountsCents: z.array(z.number().int().min(0)).max(3)
+      .refine((amounts) => new Set(amounts).size === amounts.length, "Each allowance option must be different."),
+  }),
   updatedAt: z.string(),
 });
 

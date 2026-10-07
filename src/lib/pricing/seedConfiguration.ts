@@ -2,6 +2,7 @@ import type {
   BlueLightOptionConfig,
   CoatingConfig,
   CoverageMethod,
+  FrameAllowanceShortcutsConfig,
   LensTypeConfig,
   MaterialConfig,
   MaterialPrice,
@@ -61,7 +62,11 @@ function copay(amountCents: number): CoverageMethod {
  * industry-standard retail pricing.
  */
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
+
+export function createDefaultFrameAllowanceShortcuts(): FrameAllowanceShortcutsConfig {
+  return { enabled: false, amountsCents: [10000, 20000, 32500] };
+}
 
 /**
  * Lens type is purely "what optical design is this lens" (Single Vision /
@@ -418,6 +423,7 @@ export function createDefaultConfiguration(): PricingConfiguration {
     highCylinderSurfacingFeeCents: 4500,
     highCylinderThresholdDiopters: -2,
     adjustmentPresets: [],
+    frameAllowanceShortcuts: createDefaultFrameAllowanceShortcuts(),
     defaultInsuranceCoverage: {
       // Sensible demonstration defaults: every category starts at Retail so a
       // new quote shows real prices, and the optician opts specific categories
