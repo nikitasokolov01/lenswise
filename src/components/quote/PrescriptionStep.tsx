@@ -19,6 +19,7 @@ import { prescriptionDisplayLabel, prescriptionHasAdd, toggledDisplayMode } from
 import { sanitizePupillaryDistanceValue, type PupillaryDistanceField } from "@/lib/pupillaryDistance";
 import type { PrescriptionEyeValues, PrescriptionInput, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
+import { PrescriptionScanner } from "@/components/quote/PrescriptionScanner";
 
 interface PrescriptionStepProps {
   input: QuoteInput;
@@ -119,6 +120,19 @@ export function PrescriptionStep({ input, dispatch }: PrescriptionStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <PrescriptionScanner
+          onReviewed={({ prescription: scannedPrescription, pupillaryDistance }) => {
+            setDraft(scannedPrescription);
+            setIsEditing(true);
+            setShowValidation(false);
+            if (pupillaryDistance) {
+              dispatch({ type: "SET_PUPILLARY_DISTANCE_MODE", mode: pupillaryDistance.mode });
+              for (const field of ["binocular", "right", "left"] as const) {
+                dispatch({ type: "SET_PUPILLARY_DISTANCE_VALUE", field, value: pupillaryDistance[field] });
+              }
+            }
+          }}
+        />
         <div className="rounded-lg border border-navy-100 bg-navy-50/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
