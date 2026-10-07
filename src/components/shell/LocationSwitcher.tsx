@@ -31,7 +31,14 @@ export function LocationSwitcher({
       <select
         name="locationId"
         value={activeLocationId}
-        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+        onChange={(event) => {
+          if (event.currentTarget.value === activeLocationId) return;
+          if (pathname === "/app" && !window.confirm("Switch location? This clears the current quote visit, including all pairs, prescription, and PD. Recorded sales are not removed.")) {
+            event.currentTarget.value = activeLocationId;
+            return;
+          }
+          event.currentTarget.form?.requestSubmit();
+        }}
         className={cn(
           "h-10 appearance-none truncate rounded-full border border-teal-200 bg-teal-50 py-1 pl-8 pr-7 text-xs font-bold text-navy-900 outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-100",
           variant === "menu"

@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { usePricingConfiguration } from "@/lib/pricing/usePricingConfiguration";
 import { calculateQuote } from "@/lib/calculation/calculateQuote";
-import { createDefaultQuoteInput } from "@/lib/calculation/defaultQuoteInput";
-import { quoteReducer } from "@/components/quote/quoteReducer";
+import type { QuoteAction } from "@/components/quote/quoteReducer";
+import { createQuoteSession, quoteSessionReducer } from "@/components/quote/quoteSessionReducer";
+import { calculateQuoteSession, combineQuoteResults } from "@/lib/calculation/quoteSession";
+import { QuoteSessionOverview } from "@/components/quote/QuoteSessionOverview";
+import { QuoteSessionPrint } from "@/components/quote/QuoteSessionPrint";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 import { FrameStep } from "@/components/quote/FrameStep";
 import { UsageStep } from "@/components/quote/UsageStep";
 import { LensTypeStep } from "@/components/quote/LensTypeStep";
@@ -32,7 +37,6 @@ import { compatibleMaterials, materialSupportsCombo } from "@/lib/calculation/ma
 import { clampNonNegative } from "@/lib/money";
 import type { QuoteFrameInventoryOption } from "@/lib/inventory/types";
 import type { OrganizationLocation } from "@/lib/locations/types";
-import type { CompletedSale } from "@/lib/sales/types";
 
 const ALL_QUOTE_STAGES: QuoteStage[] = ["order", "prescription", "lenses", "addons", "review"];
 
@@ -132,18 +136,20 @@ function QuoteBuilderReady({
   frameInventoryLoadError: string | null;
 }) {
   const config = initialConfig;
-  const [input, dispatch] = useReducer(quoteReducer, config, createDefaultQuoteInput);
+  const [session, sessionDispatch] = useReducer(quoteSessionReducer, config, createQuoteSession);
+  const activePair = session.pairs.find((pair) => pair.id === session.activePairId)!;
+  const input = activePair.input;
+  const dispatch = useCallback((action: QuoteAction) => sessionDispatch({ type: "EDIT_PAIR", action }), []);
   const [patientViewOpen, setPatientViewOpen] = useState(false);
   const [printMode, setPrintMode] = useState<"customer" | "internal">("customer");
   const [printRequestId, setPrintRequestId] = useState(0);
   const [activeStage, setActiveStage] = useState<QuoteStage>("order");
-  const [saleKey, setSaleKey] = useState("");
-  const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
+  const { saleKey, completedSale } = activePair;
   const wizardTopRef = useRef<HTMLDivElement>(null);
   const shouldScrollToTopRef = useRef(false);
 
   useEffect(() => {
-    setSaleKey(crypto.randomUUID());
+    sessionDispatch({ type: "INITIALIZE_SALE_KEY", id: "pair-1", saleKey: crypto.randomUUID() });
   }, []);
 
   const lensType = input.lensTypeId
@@ -162,7 +168,7 @@ function QuoteBuilderReady({
     if (material && lensType && !materialSupportsCombo(material, lensType, progressiveDesign)) {
       dispatch({ type: "SET_MATERIAL", materialId: null });
     }
-  }, [material, lensType, progressiveDesign]);
+  }, [material, lensType, progressiveDesign, dispatch]);
 
   // Lens configuration (lens type, progressive design, material, coating,
   // photochromic) stays locked until a valid prescription has been applied
@@ -260,6 +266,9 @@ function QuoteBuilderReady({
   // Calculation happens here, via the pure calculateQuote function — never
   // inline in JSX — and is memoized so it only re-runs when inputs change.
   const result = useMemo(() => calculateQuote(input, config), [input, config]);
+  const sessionResult = useMemo(() => calculateQuoteSession(session.pairs, config), [session.pairs, config]);
+  const combinedResult = useMemo(() => combineQuoteResults(sessionResult.pairs), [sessionResult.pairs]);
+  const activePairLabel = sessionResult.pairs.find((pair) => pair.id === activePair.id)!.label;
 
   const preOverrideEstimateCents = useMemo(() => {
     if (input.insurance.mode === "manual") {
@@ -300,6 +309,19 @@ function QuoteBuilderReady({
         ? "Complete the required frame and lens selections first."
         : undefined;
 
+  function addPair() {
+    if (!frameSelectionComplete || (!isFrameOnly && !lensSelectionComplete)) return;
+    sessionDispatch({ type: "ADD_PAIR", config, id: crypto.randomUUID(), saleKey: crypto.randomUUID() });
+    setActiveStage("order");
+    shouldScrollToTopRef.current = true;
+  }
+
+  function selectPair(id: string) {
+    sessionDispatch({ type: "SELECT_PAIR", id });
+    setActiveStage("order");
+    shouldScrollToTopRef.current = true;
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div ref={wizardTopRef} className="scroll-mt-20" />
@@ -312,6 +334,21 @@ function QuoteBuilderReady({
           Guide the patient through each lens decision, keep pricing visible, and finish with a clear estimate.
         </p>
       </header>
+
+      <QuoteSessionOverview
+        pairs={sessionResult.pairs}
+        activePairId={activePair.id}
+        totalCents={sessionResult.patientResponsibilityCents}
+        canAddPair={frameSelectionComplete && (isFrameOnly || lensSelectionComplete)}
+        onSelect={selectPair}
+        onAdd={addPair}
+        onRemove={(id) => {
+          if (window.confirm("Remove this pair from the quote? Its selections and adjustments will be cleared.")) {
+            sessionDispatch({ type: "REMOVE_PAIR", id });
+            if (id === activePair.id) setActiveStage("order");
+          }
+        }}
+      />
 
       <QuoteWizardProgress
         stages={visibleStages}
@@ -346,10 +383,15 @@ function QuoteBuilderReady({
                   inventoryLoadError={frameInventoryLoadError}
                 />
                 <UsageStep input={input} dispatch={dispatch} />
+                {input.prescription && session.pairs.length > 1 ? (
+                  <p className="rounded-xl border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900">
+                    The session prescription and PD are carried into this pair. You can review or change them in Prescription.
+                  </p>
+                ) : null}
               </>
             ) : null}
 
-            {activeStage === "prescription" ? <PrescriptionStep input={input} dispatch={dispatch} /> : null}
+            {activeStage === "prescription" ? <PrescriptionStep key={activePair.id} input={input} dispatch={dispatch} /> : null}
 
             {activeStage === "lenses" ? (
               <>
@@ -424,8 +466,17 @@ function QuoteBuilderReady({
                   preOverrideEstimateCents={preOverrideEstimateCents}
                   surfacingApplies={result.surfacingFeeCents > 0}
                   blueLightApplies={input.blueLightId !== null}
+                  frameAllowanceShortcuts={config.frameAllowanceShortcuts}
                 />
-                <AdjustmentsStep input={input} dispatch={dispatch} />
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-teal-800">Adjustments apply to {activePairLabel.toLowerCase()} only.</p>
+                  <AdjustmentsStep input={input} dispatch={dispatch} presets={config.adjustmentPresets} />
+                </div>
+                <Button variant="accent" className="w-full sm:w-auto" onClick={addPair} disabled={!canCompleteSale}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Save pair & add another
+                </Button>
+                <p className="text-xs text-navy-500">Pairs stay in this tab for this visit. Adding a pair copies Rx and PD, and starts its insurance at retail.</p>
               </>
             ) : null}
           </section>
@@ -441,6 +492,7 @@ function QuoteBuilderReady({
         </main>
 
         <aside className="space-y-4 no-print lg:sticky lg:top-6">
+          <p className="text-sm font-bold text-navy-800">{activePairLabel} details</p>
           <QuoteSummary
             result={result}
             config={config}
@@ -451,6 +503,7 @@ function QuoteBuilderReady({
           <div className="rounded-2xl border border-navy-100 bg-white p-4 shadow-card">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-navy-500">Quote tools</p>
             <QuoteActions
+              key={`${activePair.id}:${saleKey}`}
               result={result}
               config={config}
               usage={input.usage}
@@ -459,7 +512,9 @@ function QuoteBuilderReady({
               canCompleteSale={canCompleteSale}
               completeSaleDisabledReason={completeSaleDisabledReason}
               completedSale={completedSale}
-              onSaleCompleted={setCompletedSale}
+              onSaleCompleted={(sale) => sessionDispatch({ type: "SALE_COMPLETED", id: activePair.id, sale })}
+              pairs={sessionResult.pairs}
+              pairLabel={activePairLabel}
               orderType={input.orderType}
               frameInventoryId={
                 input.frame.entryMode === "inventory" ? input.frame.inventoryItemId : null
@@ -470,10 +525,8 @@ function QuoteBuilderReady({
               frameSku={input.frame.sku}
               frameImageUrl={selectedInventoryFrame?.imageUrl ?? ""}
               onResetQuote={() => {
-                dispatch({ type: "RESET_QUOTE", config });
+                sessionDispatch({ type: "RESET_SESSION", config, saleKey: crypto.randomUUID() });
                 setActiveStage("order");
-                setCompletedSale(null);
-                setSaleKey(crypto.randomUUID());
               }}
               onOpenPatientView={() => setPatientViewOpen(true)}
               onPrintCustomerEstimate={() => requestPrint("customer")}
@@ -483,7 +536,9 @@ function QuoteBuilderReady({
         </aside>
       </div>
 
-      {printMode === "customer" ? (
+      {session.pairs.length > 1 ? (
+        <QuoteSessionPrint pairs={sessionResult.pairs} mode={printMode} config={config} location={activeLocation} totalCents={sessionResult.patientResponsibilityCents} />
+      ) : printMode === "customer" ? (
         <CustomerEstimatePrint
           result={result}
           config={config}
@@ -492,7 +547,7 @@ function QuoteBuilderReady({
           completedSale={completedSale}
         />
       ) : null}
-      {printMode === "internal" ? (
+      {session.pairs.length === 1 && printMode === "internal" ? (
         <InternalOrderWorksheetPrint
           input={input}
           result={result}
@@ -503,7 +558,7 @@ function QuoteBuilderReady({
       ) : null}
 
       {patientViewOpen ? (
-        <PatientView result={result} config={config} usage={input.usage} onClose={() => setPatientViewOpen(false)} />
+        <PatientView result={session.pairs.length > 1 ? combinedResult : result} config={config} usage={session.pairs.length > 1 ? null : input.usage} onClose={() => setPatientViewOpen(false)} />
       ) : null}
     </div>
   );

@@ -35,6 +35,7 @@ export default async function AppHomePage() {
     <>
       <PricingImportPrompt role={ctx.role} />
       <QuoteBuilder
+        key={activeLocation.id}
         activeLocation={activeLocation}
         frameInventory={frameInventory}
         frameInventoryLoadError={

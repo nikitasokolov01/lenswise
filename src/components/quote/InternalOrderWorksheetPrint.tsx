@@ -237,9 +237,8 @@ export function InternalOrderWorksheetPrint({
               <>
                 <Row label="Frame coverage" value={formatCoverageMethod(coverage.frameCoverage)} />
                 <Row label="Frame allowance" value={formatCents(coverage.frameAllowanceCents)} />
-                <Row label="Base lens coverage" value={formatCoverageMethod(coverage.lensCoverage)} />
+                <Row label="Lens + material coverage" value={formatCoverageMethod(coverage.lensCoverage)} />
                 <Row label="Lens allowance" value={formatCents(coverage.lensAllowanceCents)} />
-                <Row label="Material coverage" value={formatCoverageMethod(coverage.materialCoverage)} />
                 <Row label="Coating coverage" value={formatCoverageMethod(coverage.coatingCoverage)} />
                 <Row label="Photochromic coverage" value={formatCoverageMethod(coverage.photochromicCoverage)} />
                 {input.tint.type !== "none" ? (

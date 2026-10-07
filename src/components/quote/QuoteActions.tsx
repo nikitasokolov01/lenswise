@@ -13,6 +13,7 @@ import type {
   QuoteCalculationResult,
   UsageKey,
 } from "@/lib/types";
+import type { CalculatedQuotePair } from "@/lib/calculation/quoteSession";
 
 interface QuoteActionsProps {
   result: QuoteCalculationResult;
@@ -35,6 +36,8 @@ interface QuoteActionsProps {
   onOpenPatientView: () => void;
   onPrintCustomerEstimate: () => void;
   onPrintInternalWorksheet: () => void;
+  pairs?: CalculatedQuotePair[];
+  pairLabel?: string;
 }
 
 /**
@@ -143,11 +146,16 @@ export function QuoteActions({
   onOpenPatientView,
   onPrintCustomerEstimate,
   onPrintInternalWorksheet,
+  pairs,
+  pairLabel,
 }: QuoteActionsProps) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
-    const text = buildPlainTextSummary(
+    const text = pairs && pairs.length > 1
+      ? pairs.map((pair) => `${pair.label}\n${buildPlainTextSummary(pair.result, config, pair.input.usage, locationName, pair.completedSale)}`).join("\n\n") +
+        `\n\nCombined patient responsibility: ${formatCents(pairs.reduce((total, pair) => total + pair.result.patientResponsibilityCents, 0))}`
+      : buildPlainTextSummary(
       result,
       config,
       usage,
@@ -164,7 +172,7 @@ export function QuoteActions({
   }
 
   function handleReset() {
-    if (window.confirm("Reset this quote? All selections will be cleared.")) {
+    if (window.confirm("Start a new visit? All pairs, prescriptions, PD, and selections in this tab will be cleared. Recorded sales stay in Sales.")) {
       onResetQuote();
     }
   }
@@ -172,6 +180,7 @@ export function QuoteActions({
   return (
     <div className="flex flex-wrap gap-2">
       <CompleteSaleDialog
+        pairLabel={pairs && pairs.length > 1 ? pairLabel : undefined}
         saleKey={saleKey}
         canComplete={canCompleteSale}
         disabledReason={completeSaleDisabledReason}
@@ -188,7 +197,7 @@ export function QuoteActions({
       />
       <Button variant="secondary" size="sm" onClick={handleReset}>
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
-        Reset quote
+        New visit / reset
       </Button>
       <Button variant="secondary" size="sm" onClick={handleCopy}>
         {copied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}

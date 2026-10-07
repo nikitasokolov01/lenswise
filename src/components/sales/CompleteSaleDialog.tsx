@@ -34,10 +34,12 @@ interface CompleteSaleDialogProps {
   frameSize: string;
   frameSku: string;
   frameImageUrl: string;
+  pairLabel?: string;
 }
 
-function CompleteSaleSubmit() {
+function CompleteSaleSubmit({ onPendingChange }: { onPendingChange: (pending: boolean) => void }) {
   const { pending } = useFormStatus();
+  useEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
   return (
     <Button type="submit" variant="accent" className="w-full" disabled={pending}>
       <LockKeyhole className="h-4 w-4" aria-hidden="true" />
@@ -60,8 +62,10 @@ export function CompleteSaleDialog({
   frameSize,
   frameSku,
   frameImageUrl,
+  pairLabel,
 }: CompleteSaleDialogProps) {
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<SalePaymentMethod>("card");
   const [state, formAction] = useFormState(completeSaleAction, EMPTY_STATE);
 
@@ -74,11 +78,11 @@ export function CompleteSaleDialog({
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape" && !submitting) setOpen(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
+  }, [open, submitting]);
 
   if (completedSale) {
     return (
@@ -120,7 +124,7 @@ export function CompleteSaleDialog({
           onClick={() => setOpen(true)}
         >
           <ShoppingBag className="h-4 w-4" aria-hidden="true" />
-          Complete Sale
+          {pairLabel ? `Record payment · ${pairLabel}` : "Complete Sale"}
         </Button>
         {disabledReason ? (
           <p className="mt-1.5 text-xs leading-5 text-navy-500">{disabledReason}</p>
@@ -132,7 +136,7 @@ export function CompleteSaleDialog({
           className="fixed inset-0 z-[70] flex items-center justify-center bg-navy-950/55 p-4"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOpen(false);
+            if (event.target === event.currentTarget && !submitting) setOpen(false);
           }}
         >
           <section
@@ -144,7 +148,7 @@ export function CompleteSaleDialog({
             <div className="flex items-start justify-between border-b border-navy-100 px-5 py-4">
               <div>
                 <h2 id="complete-sale-title" className="text-xl font-bold text-navy-900">
-                  Complete this sale
+                  {pairLabel ? `Complete sale · ${pairLabel}` : "Complete this sale"}
                 </h2>
                 <p className="mt-1 text-sm text-navy-500">
                   Record payment after it has been collected in your POS or as cash.
@@ -155,6 +159,7 @@ export function CompleteSaleDialog({
                 size="icon"
                 className="-mr-2 -mt-2"
                 aria-label="Close"
+                disabled={submitting}
                 onClick={() => setOpen(false)}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
@@ -183,6 +188,7 @@ export function CompleteSaleDialog({
                 <p className="mt-1 text-3xl font-bold text-navy-950">
                   {formatCents(patientResponsibilityCents)}
                 </p>
+                {pairLabel ? <p className="mt-2 text-xs font-semibold text-navy-600">This amount and inventory deduction apply to {pairLabel.toLowerCase()} only. Record each pair separately.</p> : null}
                 {frameInventoryId ? (
                   <p className="mt-2 text-xs text-navy-600">
                     Completing the sale removes one {frameName || "frame"} from this location’s
@@ -283,7 +289,8 @@ export function CompleteSaleDialog({
                 LensWise stores the payment type only. Never enter a full card number,
                 expiration date, or security code.
               </p>
-              <CompleteSaleSubmit />
+              {submitting ? <p className="text-xs text-navy-600" role="status">Please keep this window open while the payment is recorded.</p> : null}
+              <CompleteSaleSubmit onPendingChange={setSubmitting} />
             </form>
           </section>
         </div>
