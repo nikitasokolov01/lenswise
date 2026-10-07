@@ -221,7 +221,7 @@ export function CameraPdMeasurement({ onApply }: { onApply: (binocular: string) 
             Keep the face straight and centered, remove glasses, and use even lighting.
             Ask the patient to look at a distant target, not the phone.
           </div>
-          <p className="text-xs text-navy-500">Photos stay in this session and are discarded when this window closes. Obtain the patient’s agreement before taking a photo; use a blank reference with no personal information.</p>
+          <p className="text-xs text-navy-500">LensWise does not upload or save this photo and discards its copy when this window closes. Your device’s camera app may keep a copy when you use Take photo. Obtain the patient’s agreement first; use a blank reference with no personal information.</p>
           <div className="flex flex-wrap gap-2">
             <Button variant="accent" size="sm" disabled={busy} onClick={startCamera}><Camera className="h-4 w-4" /> {busy ? "Starting camera…" : "Start live camera"}</Button>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => captureRef.current?.click()}>Take photo</Button>

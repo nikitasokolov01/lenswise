@@ -293,7 +293,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
   return (
     <section className="space-y-4 rounded-xl border border-teal-200 bg-white p-4" aria-label="Printed prescription scanner">
       <div className="flex items-start justify-between gap-3">
-        <div><h3 className="font-semibold text-navy-900">Scan printed prescription</h3><p className="mt-1 text-xs text-navy-500">Processed on this device. Photos and text are never uploaded or saved.</p></div>
+        <div><h3 className="font-semibold text-navy-900">Scan printed prescription</h3><p className="mt-1 text-xs text-navy-500">Processed on this device. LensWise does not upload or save photos or text. Your camera app may keep a copy when you use Take a photo; crop out identifying details before scanning.</p></div>
         <Button variant="ghost" size="icon" onClick={close} aria-label="Close prescription scanner"><X className="h-4 w-4" /></Button>
       </div>
       <input ref={photoInput} type="file" accept="image/*" className="hidden" aria-label="Choose prescription photo" onChange={(event) => { void loadPhoto(event.target.files?.[0]); event.target.value = ""; }} />

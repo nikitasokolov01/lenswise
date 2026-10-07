@@ -20,6 +20,7 @@ import { sanitizePupillaryDistanceValue, type PupillaryDistanceField } from "@/l
 import type { PrescriptionEyeValues, PrescriptionInput, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 import { PrescriptionScanner } from "@/components/quote/PrescriptionScanner";
+import { CameraPdMeasurement } from "@/components/quote/CameraPdMeasurement";
 
 interface PrescriptionStepProps {
   input: QuoteInput;
@@ -218,6 +219,14 @@ export function PrescriptionStep({ input, dispatch }: PrescriptionStepProps) {
           <p id="pupillary-distance-help" className="mt-1.5 text-xs text-navy-500">
             Up to two digits plus one decimal. This appears only on the Internal Worksheet.
           </p>
+          <div className="mt-3">
+            <CameraPdMeasurement
+              onApply={(binocular) => {
+                dispatch({ type: "SET_PUPILLARY_DISTANCE_MODE", mode: "binocular" });
+                updatePupillaryDistance("binocular", binocular);
+              }}
+            />
+          </div>
         </div>
 
         {isEditing ? (
