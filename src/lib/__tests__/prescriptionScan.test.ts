@@ -72,8 +72,20 @@ describe("printed prescription scan parsing", () => {
     expect(parsePrescriptionScan("PD: 63\nPD: 64").pupillaryDistance).toBeNull();
   });
 
-  it("warns about prism rather than treating it as a supported field", () => {
-    const result = parsePrescriptionScan("SPH CYL AXIS ADD PRISM BASE\nOD -2.00 -0.50 180 2.00 1.00 BI\nOS -1.00 -0.25 90 2.00 1.00 BO");
+  it.each(["PD: -63", "PD: −63", "PD: - 63", "PD: OD -31.5 / OS 32", "PD: OD 31.5 / OS -32"])("rejects negative PD instead of dropping its sign: %s", (text) => {
+    expect(parsePrescriptionScan(text).pupillaryDistance).toBeNull();
+  });
+
+  it("rejects positional tables with unsupported columns that can shift ADD", () => {
+    const result = parsePrescriptionScan("SPH CYL AXIS ADD PRISM BASE\nOD -2.00 SPH +2.00 1.00 BI\nOS -1.00 SPH +2.00 1.00 BI");
+    expect(result.od).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(result.os).toEqual({ sphere: null, cylinder: null, axis: null, add: null });
+    expect(reviewedScanPrescription(result)).toBeNull();
+    expect(result.warnings.join(" ")).toContain("extra columns");
+  });
+
+  it("still reads explicitly labelled optical values and warns about prism", () => {
+    const result = parsePrescriptionScan("SPH CYL AXIS ADD PRISM BASE\nOD SPH -2.00 CYL -0.50 AXIS 180 ADD 2.00 PRISM 1.00 BASE BI\nOS SPH -1.00 CYL -0.25 AXIS 90 ADD 2.00 PRISM 1.00 BASE BO");
     expect(result.od.axis).toBe(180);
     expect(result.od.add).toBe(2);
     expect(result.warnings.join(" ")).toContain("Prism");

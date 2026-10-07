@@ -72,6 +72,10 @@ function parseEyeRow(row: string, columns: string[]): ScannedEyeValues {
   }
 
   const tokens = row.match(numericToken) ?? [];
+  // A missing optical cell plus a numeric prism/PD cell can appear to have
+  // the correct token count and silently shift values. Without column
+  // coordinates, mixed tables must be cropped or entered manually.
+  if (columns.some((column) => columnName(column) === null)) return eye;
   // Reject partially missing numeric cells rather than shifting an axis or
   // ADD into a different field. Headerless compact Rx requires three cells.
   const expectedColumns = columns.length ? columns : ["SPH", "CYL", "AXIS", "ADD"];
@@ -127,7 +131,8 @@ function parsePd(lines: string[], warnings: string[]): PupillaryDistanceInput | 
   // Near PD must not overwrite a distance measurement used by this quote.
   if (/\bNEAR\b/i.test(line)) return null;
   const valueArea = line.replace(/^.*?\b(?:PD|PUPILLARY\s+DISTANCE)\b[:\s]*/i, "");
-  const values = (valueArea.match(/[\d]+(?:[.,]\d+)?/g) ?? []).map((value) => Number(value.replace(",", ".")));
+  const values = (valueArea.match(/[+-]?\s*\d+(?:[.,]\d+)?/g) ?? [])
+    .map((value) => Number(value.replace(/\s/g, "").replace(",", ".")));
   const validPd = (value: number, minimum: number, maximum: number) =>
     value >= minimum && value <= maximum && Number.isInteger(value * 10);
   if (values.length === 1 && validPd(values[0], 40, 85)) {
@@ -184,7 +189,11 @@ export function parsePrescriptionScan(rawText: string): PrescriptionScanResult {
     }
     const values = rows[eye][0] ?? blankEye();
     if (values.add === null && sharedAdd !== null) values.add = sharedAdd;
-    if (!rows[eye].length) warnings.push(`${name}: no clear prescription row found. Enter this eye manually.`);
+    if (!rows[eye].length) {
+      warnings.push(columns.some((column) => columnName(column) === null)
+        ? `${name}: this table has extra columns that could shift values. Crop to the SPH, CYL, AXIS, and ADD columns and scan again, or enter this eye manually.`
+        : `${name}: no clear prescription row found. Enter this eye manually.`);
+    }
     return validateEye(values, name, warnings);
   };
   const od = getEye("od");
