@@ -153,6 +153,15 @@ export const pricingConfigurationSchema = z.object({
   highCylinderSurfacingFeeCents: z.number().int(),
   highCylinderThresholdDiopters: z.number(),
   defaultInsuranceCoverage: defaultInsuranceCoverageSchema,
+  adjustmentPresets: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().trim().min(1).max(40),
+    type: z.enum(["fixed_discount", "percent_discount", "charge", "credit"]),
+    amountCents: z.number().int().min(0),
+    percent: z.number().min(0).max(100),
+    active: z.boolean(),
+    sortOrder: z.number(),
+  })),
   updatedAt: z.string(),
 });
 

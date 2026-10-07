@@ -11,6 +11,8 @@ import { PhotochromicSection } from "@/components/admin/PhotochromicSection";
 import { TintsSection } from "@/components/admin/TintsSection";
 import { BlueLightSection } from "@/components/admin/BlueLightSection";
 import { FeesAndDefaultsSection } from "@/components/admin/FeesAndDefaultsSection";
+import { AdjustmentPresetsSection } from "@/components/admin/AdjustmentPresetsSection";
+import { pricingConfigurationSchema } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { Save, RotateCcw, CheckCircle2 } from "lucide-react";
 import type { PricingConfiguration } from "@/lib/types";
@@ -66,7 +68,14 @@ export function AdminEditor() {
     setSaving(true);
     setSaveError(null);
     try {
-      await save(draft);
+      const parsed = pricingConfigurationSchema.safeParse(draft);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        throw new Error(`Check ${issue.path.join(" → ")}: ${issue.message}`);
+      }
+      const validated = parsed.data as PricingConfiguration;
+      await save(validated);
+      setDraft(validated);
       setSavedMessageVisible(true);
       setTimeout(() => setSavedMessageVisible(false), 2500);
     } catch (e) {
@@ -132,6 +141,11 @@ export function AdminEditor() {
           onChangeShowExactTechnologyNames={(value) =>
             setDraft({ ...draft, showExactTechnologyNamesOnCustomerQuotes: value })
           }
+        />
+
+        <AdjustmentPresetsSection
+          presets={draft.adjustmentPresets}
+          onChange={(adjustmentPresets) => setDraft({ ...draft, adjustmentPresets })}
         />
 
         <LensTypesSection lensTypes={draft.lensTypes} onChange={(items) => setDraft({ ...draft, lensTypes: items })} />

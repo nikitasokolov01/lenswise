@@ -61,7 +61,7 @@ function copay(amountCents: number): CoverageMethod {
  * industry-standard retail pricing.
  */
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /**
  * Lens type is purely "what optical design is this lens" (Single Vision /
@@ -417,6 +417,7 @@ export function createDefaultConfiguration(): PricingConfiguration {
     transitionsSurfacingFeeCents: 3000,
     highCylinderSurfacingFeeCents: 4500,
     highCylinderThresholdDiopters: -2,
+    adjustmentPresets: [],
     defaultInsuranceCoverage: {
       // Sensible demonstration defaults: every category starts at Retail so a
       // new quote shows real prices, and the optician opts specific categories

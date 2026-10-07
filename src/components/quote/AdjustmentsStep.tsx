@@ -6,13 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MoneyField } from "@/components/ui/money-field";
 import { Trash2, Plus } from "lucide-react";
+import { formatCents } from "@/lib/money";
 import type { Dispatch } from "react";
-import type { AdjustmentType, QuoteInput } from "@/lib/types";
+import type { AdjustmentPresetConfig, AdjustmentType, QuoteInput } from "@/lib/types";
 import type { QuoteAction } from "@/components/quote/quoteReducer";
 
 interface AdjustmentsStepProps {
   input: QuoteInput;
   dispatch: Dispatch<QuoteAction>;
+  presets?: AdjustmentPresetConfig[];
 }
 
 const ADJUSTMENT_LABELS: Record<AdjustmentType, string> = {
@@ -22,13 +24,14 @@ const ADJUSTMENT_LABELS: Record<AdjustmentType, string> = {
   credit: "Custom credit",
 };
 
-export function AdjustmentsStep({ input, dispatch }: AdjustmentsStepProps) {
+export function AdjustmentsStep({ input, dispatch, presets = [] }: AdjustmentsStepProps) {
+  const activePresets = presets.filter((preset) => preset.active).sort((a, b) => a.sortOrder - b.sortOrder);
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-4">
         <div>
         <CardTitle>Adjustments</CardTitle>
-          <CardDescription>Add optional discounts, charges, or credits.</CardDescription>
+          <CardDescription>Add discounts, charges, or credits to this pair only.</CardDescription>
         </div>
         {input.adjustments.length > 0 ? (
           <Button
@@ -45,6 +48,33 @@ export function AdjustmentsStep({ input, dispatch }: AdjustmentsStepProps) {
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3">
+        {activePresets.length > 0 ? (
+          <div className="rounded-lg border border-teal-200 bg-teal-50/50 p-3">
+            <p className="mb-2 text-sm font-semibold text-navy-800">Quick adjustments</p>
+            <div className="flex flex-wrap gap-2">
+              {activePresets.map((preset) => (
+                <Button
+                  key={preset.id}
+                  variant="secondary"
+                  size="sm"
+                  className="h-auto min-h-9 whitespace-normal py-2 text-left"
+                  onClick={() => dispatch({
+                    type: "ADD_ADJUSTMENT",
+                    adjustmentType: preset.type,
+                    values: { label: preset.label, amountCents: preset.amountCents, percent: preset.percent },
+                  })}
+                >
+                  <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {preset.label}
+                  <span className="text-xs text-teal-700">
+                    {preset.type === "percent_discount" ? `${preset.percent}% off` : formatCents(preset.amountCents)}
+                  </span>
+                </Button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-navy-500">Added adjustments remain editable below.</p>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {(Object.keys(ADJUSTMENT_LABELS) as AdjustmentType[]).map((type) => (
             <Button

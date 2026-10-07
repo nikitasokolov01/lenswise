@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { migratePricingConfiguration } from "@/lib/pricing/migratePricingConfiguration";
 import { pricingConfigurationSchema } from "@/lib/validation";
-import { SCHEMA_VERSION } from "@/lib/pricing/seedConfiguration";
+import { SCHEMA_VERSION, createDefaultConfiguration } from "@/lib/pricing/seedConfiguration";
 
 function v1Fixture() {
   return {
@@ -111,5 +111,29 @@ describe("migratePricingConfiguration", () => {
   it("returns non-object input unchanged", () => {
     expect(migratePricingConfiguration(null)).toBeNull();
     expect(migratePricingConfiguration("not an object")).toBe("not an object");
+  });
+
+  it("adds an empty quick-adjustment list without changing v11 office pricing", () => {
+    const { adjustmentPresets: _presets, ...legacy } = createDefaultConfiguration();
+    const migrated = migratePricingConfiguration({ ...legacy, schemaVersion: 11, officeName: "Existing office" }) as Record<string, unknown>;
+    expect(migrated.adjustmentPresets).toEqual([]);
+    expect(migrated.officeName).toBe("Existing office");
+    expect(migrated.materials).toEqual(legacy.materials);
+    expect(migrated.defaultInsuranceCoverage).toEqual(legacy.defaultInsuranceCoverage);
+    expect(pricingConfigurationSchema.safeParse(migrated).success).toBe(true);
+  });
+
+  it("preserves configured presets and rejects invalid discount values", () => {
+    const config = createDefaultConfiguration();
+    const preset = {
+      id: "first-purchase", label: "First purchase", type: "fixed_discount" as const,
+      amountCents: 10000, percent: 0, active: true, sortOrder: 0,
+    };
+    const migrated = migratePricingConfiguration({ ...config, schemaVersion: 11, adjustmentPresets: [preset] }) as Record<string, unknown>;
+    expect(migrated.adjustmentPresets).toEqual([preset]);
+    expect(pricingConfigurationSchema.safeParse(migrated).success).toBe(true);
+    expect(pricingConfigurationSchema.safeParse({ ...config, adjustmentPresets: [{ ...preset, amountCents: -1 }] }).success).toBe(false);
+    expect(pricingConfigurationSchema.safeParse({ ...config, adjustmentPresets: [{ ...preset, type: "percent_discount", percent: 101 }] }).success).toBe(false);
+    expect(pricingConfigurationSchema.safeParse({ ...config, adjustmentPresets: [{ ...preset, label: " " }] }).success).toBe(false);
   });
 });

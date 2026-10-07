@@ -102,7 +102,7 @@ export type QuoteAction =
   | { type: "SET_INSURANCE_NOTE"; value: string }
   | { type: "SET_MANUAL_OVERRIDE_AMOUNT"; value: number }
   | { type: "SET_MANUAL_OVERRIDE_NOTE"; value: string }
-  | { type: "ADD_ADJUSTMENT"; adjustmentType: AdjustmentType }
+  | { type: "ADD_ADJUSTMENT"; adjustmentType: AdjustmentType; values?: Pick<AdjustmentInput, "label" | "amountCents" | "percent"> }
   | { type: "UPDATE_ADJUSTMENT"; id: string; patch: Partial<AdjustmentInput> }
   | { type: "REMOVE_ADJUSTMENT"; id: string }
   | { type: "RESET_ADJUSTMENTS" }
@@ -310,9 +310,9 @@ export function quoteReducer(state: QuoteInput, action: QuoteAction): QuoteInput
       const newAdjustment: AdjustmentInput = {
         id: generateId("adj"),
         type: action.adjustmentType,
-        amountCents: 0,
-        percent: 0,
-        label: "",
+        amountCents: action.values?.amountCents ?? 0,
+        percent: action.values?.percent ?? 0,
+        label: action.values?.label ?? "",
       };
       return { ...state, adjustments: [...state.adjustments, newAdjustment] };
     }

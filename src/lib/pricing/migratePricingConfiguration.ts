@@ -98,6 +98,9 @@ export function migratePricingConfiguration(raw: unknown): unknown {
   if (version < 11) {
     migrated = migrateV10ToV11(migrated);
   }
+  if (version < 12) {
+    migrated = migrateV11ToV12(migrated);
+  }
 
   return migrated;
 }
@@ -470,6 +473,15 @@ function migrateV10ToV11(obj: Record<string, unknown>): Record<string, unknown> 
 
   migrated.schemaVersion = 11;
   return migrated;
+}
+
+/** Existing offices receive an empty preset list; discounts are opt-in. */
+function migrateV11ToV12(obj: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...obj,
+    adjustmentPresets: Array.isArray(obj.adjustmentPresets) ? obj.adjustmentPresets : [],
+    schemaVersion: 12,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

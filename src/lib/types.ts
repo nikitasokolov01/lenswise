@@ -300,6 +300,17 @@ export interface DefaultInsuranceCoverage {
   otherChargeCents: Money;
 }
 
+/** Reusable office adjustment copied into the current pair when selected. */
+export interface AdjustmentPresetConfig {
+  id: string;
+  label: string;
+  type: AdjustmentType;
+  amountCents: Money;
+  percent: number;
+  active: boolean;
+  sortOrder: number;
+}
+
 export interface PricingConfiguration {
   schemaVersion: number;
   officeName: string;
@@ -342,6 +353,7 @@ export interface PricingConfiguration {
    */
   highCylinderThresholdDiopters: number;
   defaultInsuranceCoverage: DefaultInsuranceCoverage;
+  adjustmentPresets: AdjustmentPresetConfig[];
   updatedAt: string;
 }
 
