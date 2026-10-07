@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="700" viewBox="0 0 1600 700">
+  <rect width="1600" height="700" fill="white"/>
+  <g fill="black" font-family="Arial, sans-serif" font-size="55">
+    <text x="80" y="100" font-size="38">SYNTHETIC TEST PRESCRIPTION — NOT FOR CLINICAL USE</text>
+    <text x="300" y="220">SPH</text><text x="600" y="220">CYL</text>
+    <text x="900" y="220">AXIS</text><text x="1200" y="220">ADD</text>
+    <text x="80" y="340">OD</text><text x="300" y="340">-2.00</text><text x="600" y="340">-1.25</text><text x="900" y="340">180</text><text x="1200" y="340">+2.00</text>
+    <text x="80" y="460">OS</text><text x="300" y="460">+1.50</text><text x="600" y="460">-0.75</text><text x="900" y="460">090</text><text x="1200" y="460">+2.25</text>
+    <text x="80" y="600">PD: 63.5</text>
+  </g>
+</svg>
