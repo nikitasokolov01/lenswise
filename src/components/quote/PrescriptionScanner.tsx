@@ -565,8 +565,9 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
             if (!area) continue;
             await untilCancelled(scanWorker.setParameters({
               tessedit_pageseg_mode: PSM.SINGLE_LINE,
-              tessedit_char_whitelist: field === "axis" ? "0123456789"
-                : field === "cylinder" ? "+-0123456789.,DSdsPHph" : "+-0123456789.,",
+              // Preserve explicit PL/PLANO and D.S. instead of forcing letters
+              // into digits. The parser still validates every observed token.
+              tessedit_char_whitelist: "",
             }));
             readingStatus = `Rechecking ${eye.toUpperCase()} ${field}…`;
             setStatus(readingStatus);
@@ -730,7 +731,7 @@ export function PrescriptionScanner({ onReviewed }: { onReviewed: (scan: Reviewe
 function ScanDetails({ passes }: { passes: PrescriptionScanDiagnostics[] }) {
   return <details className="rounded-lg border border-navy-100 bg-navy-50/40 p-3 text-xs text-navy-600">
     <summary className="cursor-pointer font-medium text-navy-800">Scan details (no prescription text)</summary>
-    <p className="mt-2">Scanner 2026.10.07.3. These details stay on this device and clear when you close the scanner. If a scan fails, you can share a screenshot of this panel to help troubleshoot.</p>
+    <p className="mt-2">Scanner 2026.10.07.4. These details stay on this device and clear when you close the scanner. If a scan fails, you can share a screenshot of this panel to help troubleshoot.</p>
     <div className="mt-3 space-y-3">{passes.map((detail, index) => <div key={`${detail.pass}-${index}`} className="space-y-1 rounded-lg border border-navy-100 bg-white p-2">
       <p className="font-semibold text-navy-800">{detail.pass === "initial" ? "First reading" : detail.pass === "table" ? "Table-cell reading" : "Enhanced reading"}</p>
       <p>Photo: {detail.sourcePixels.width} × {detail.sourcePixels.height} px · OCR: {detail.ocrPixels.width} × {detail.ocrPixels.height} px · {detail.fullCrop ? "Full photo" : "Cropped area"}</p>

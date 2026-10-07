@@ -191,6 +191,12 @@ export async function readPrescriptionTableGrids(
     for (const field of FIELDS) {
       const column = candidate.columns[field];
       if (column === undefined) continue;
+      // Axis is inapplicable only after the SAME exact-cell parser has
+      // validated explicit zero cylinder evidence (e.g. D.S., PL, or 0.00).
+      // Do not OCR that usually blank box: isolated rules can become junk.
+      // Missing, uncertain, ambiguous, and nonzero cylinders still read axis.
+      if (field === "axis" && parseObservedPrescriptionRows(candidate.headings,
+        [{ eye: row.eye, label: row.label, cells }])[row.eye].cylinder === 0) continue;
       const region = cellRegion(grid, column, row.index);
       if (!region) return refuse("invalid_geometry");
       cells[field] = await read(region, "value");

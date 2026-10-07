@@ -48,11 +48,56 @@ describe("observed prescription table-grid reading", () => {
     expect(reading.result?.pupillaryDistance).toBeNull();
     expect(reading.result?.hasAlignedTable).toBe(true);
     expect(reading.result?.warnings.join(" ")).toContain("Prism");
-    expect(reading.metadata).toEqual({ gridsExamined: 1, matchedTables: 1, eyeRows: 2, cellReads: 16, cancelled: false, blocker: "none" });
+    expect(reading.metadata).toEqual({ gridsExamined: 1, matchedTables: 1, eyeRows: 2, cellReads: 15, cancelled: false, blocker: "none" });
     expect(calls[0]).toMatchObject({ left: 102, top: 102, width: 96, height: 46, kind: "heading" });
     expect(calls.find((call) => call.kind === "eye")).toMatchObject({ left: 0, width: 198 });
     expect(JSON.stringify(words)).toBe(before);
     expect(reviewedScanPrescription(reading.result!)).not.toBeNull();
+  });
+
+  it.each(["D.S.", "PL", "PLANO", "0", "0.00", "+0.00", "-0.00"])("does not OCR inapplicable axis after validated zero cylinder %s", async (text) => {
+    const { grid, words } = fixture();
+    words.find((entry) => entry.text === "D.S.")!.text = "-1.00";
+    words.find((entry) => entry.text === "-0.50")!.text = text;
+    words.find((entry) => entry.text === "-2.00")!.text = "PL";
+    words.push(word("090", 713, 213));
+    const { read, calls } = recognizer(words);
+    const reading = await readPrescriptionTableGrids([grid], 1200, 800, async (region, kind) => {
+      if (kind === "value" && region.left === 682 && region.top === 152) {
+        throw new Error("Inapplicable OD axis must not be recognized");
+      }
+      return read(region, kind);
+    });
+    expect(reading.metadata.blocker).toBe("none");
+    expect(reading.result?.od).toEqual({ sphere: 0, cylinder: text === "-0.00" ? -0 : 0, axis: null, add: 2 });
+    expect(reading.result?.os).toEqual({ sphere: 1.75, cylinder: -1, axis: 90, add: 2.25 });
+    expect(calls.some((call) => call.kind === "value" && call.left === 682 && call.top === 202)).toBe(true);
+  });
+
+  it.each(["low confidence", "missing confidence", "invalid confidence", "missing cylinder", "duplicate zero", "unclear zero", "negative cylinder", "positive cylinder"])("still reads axis and enforces its geometry with %s", async (failure) => {
+    const { grid, words } = fixture();
+    const cylinder = words.find((entry) => entry.text === "-0.50")!;
+    cylinder.text = "D.S.";
+    if (failure === "low confidence") cylinder.confidence = 44;
+    if (failure === "missing confidence") delete cylinder.confidence;
+    if (failure === "invalid confidence") cylinder.confidence = Number.NaN;
+    if (failure === "missing cylinder") words.splice(words.indexOf(cylinder), 1);
+    if (failure === "duplicate zero") cylinder.text = "0.00 0.00";
+    if (failure === "unclear zero") cylinder.text = "D.S.x";
+    if (failure === "negative cylinder") cylinder.text = "-0.50";
+    if (failure === "positive cylinder") cylinder.text = "+0.50";
+    const { read } = recognizer(words);
+    let readAxis = false;
+    const reading = await readPrescriptionTableGrids([grid], 1200, 800, async (region, kind) => {
+      if (kind === "value" && region.left === 682 && region.top === 152) {
+        readAxis = true;
+        return [word("<a", region.left - 3, region.top, 10)];
+      }
+      return read(region, kind);
+    });
+    expect(readAxis).toBe(true);
+    expect(reading.metadata.blocker).toBe("invalid_geometry");
+    expect(reading.result).toBeNull();
   });
 
   it("uses actual grid cells rather than shifting a right-aligned value across a heading midpoint", async () => {

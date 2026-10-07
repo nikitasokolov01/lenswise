@@ -180,6 +180,50 @@ describe("bounded observed prescription grid geometry", () => {
     expect(found[0].columnWidths).toEqual([2, 2, 2, 2, 2, 2]);
   });
 
+  it("merges overlapping horizontal fragments while retaining their full observed stroke envelope", () => {
+    const width = 720;
+    const pixels = page(width, 340, 169);
+    const columns = [40, 140, 240, 360, 480, 660];
+    const rows = [50, 115, 180, 245];
+    for (const y of rows) {
+      for (let x = 40; x <= 260; x++) point(pixels, width, x, y, 155);
+      for (let x = 40; x <= 350; x++) point(pixels, width, x, y + 1, 155);
+      for (let x = 590; x <= 660; x++) point(pixels, width, x, y + 1, 155);
+      for (let x = 180; x <= 660; x++) point(pixels, width, x, y + 2, 155);
+      for (let x = 300; x <= 530; x++) point(pixels, width, x, y + 3, 155);
+    }
+    for (const x of columns) for (let y = 50; y <= 248; y++) point(pixels, width, x, y, 155);
+    const found = findPrescriptionGrids(pixels, width, 340);
+    expect(found).toHaveLength(1);
+    expect(found[0].columns).toEqual(columns);
+    expect(found[0].rows).toEqual(rows.map((value) => value + 1.5));
+    expect(found[0].rowWidths).toEqual([4, 4, 4, 4]);
+  });
+
+  it("does not bridge disjoint horizontal fragments on neighboring pixel rows", () => {
+    const width = 720;
+    const pixels = page(width, 340);
+    const columns = [40, 140, 240, 360, 480, 660];
+    grid(pixels, width, columns, [50, 115, 180, 245]);
+    for (let x = 40; x <= 660; x++) point(pixels, width, x, 50, 250);
+    for (let x = 40; x <= 260; x++) point(pixels, width, x, 50);
+    for (let x = 400; x <= 660; x++) point(pixels, width, x, 51);
+    expect(findPrescriptionGrids(pixels, width, 340)).toEqual([]);
+  });
+
+  it("does not merge crossing diagonal fragments into a precise horizontal divider", () => {
+    const width = 720;
+    const pixels = page(width, 340);
+    const columns = [40, 140, 240, 360, 480, 660];
+    grid(pixels, width, columns, [50, 115, 180, 245]);
+    for (let x = 40; x <= 660; x++) {
+      point(pixels, width, x, 50, 250);
+      point(pixels, width, x, 50 + Math.round((x - 40) * 0.05));
+      point(pixels, width, x, 81 - Math.round((x - 40) * 0.05));
+    }
+    expect(findPrescriptionGrids(pixels, width, 340)).toEqual([]);
+  });
+
   it("does not turn a gray rectangular photo patch or smooth illumination into a grid", () => {
     const width = 720;
     const height = 340;

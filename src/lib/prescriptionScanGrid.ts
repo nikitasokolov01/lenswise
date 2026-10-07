@@ -26,6 +26,34 @@ const MAX_BOUNDARIES = 24;
 const MAX_GRID_GROUPS = 96;
 const MAX_STROKE_WIDTH = 8;
 
+function mergeHorizontalAliases(rules: Rule[]): Rule[] {
+  const merged: Rule[] = [];
+  for (const rule of rules) {
+    let observed = { ...rule };
+    for (let index = merged.length - 1; index >= 0; index--) {
+      const previous = merged[index];
+      const first = Math.min(previous.position - (previous.thickness - 1) / 2,
+        observed.position - (observed.thickness - 1) / 2);
+      const last = Math.max(previous.position + (previous.thickness - 1) / 2,
+        observed.position + (observed.thickness - 1) / 2);
+      const gap = observed.position - (observed.thickness - 1) / 2
+        - (previous.position + (previous.thickness - 1) / 2);
+      const overlap = Math.min(previous.end, observed.end) - Math.max(previous.start, observed.start);
+      if (last - first + 1 > MAX_STROKE_WIDTH || gap > 1
+        || overlap < Math.min(previous.end - previous.start, observed.end - observed.start) * 0.5) continue;
+      // A photographed rule may split into overlapping runs on adjacent rows.
+      // Keep the full observed ink envelope; never bridge a horizontal gap or
+      // use this mask as recognition pixels. Merge every connected alias so
+      // left/right fragments cannot remain duplicate boundaries of one rule.
+      observed = { position: (first + last) / 2, thickness: last - first + 1,
+        start: Math.min(previous.start, observed.start), end: Math.max(previous.end, observed.end) };
+      merged.splice(index, 1);
+    }
+    merged.push(observed);
+  }
+  return merged;
+}
+
 function sampledGray(pixels: Uint8ClampedArray | Uint8Array, width: number, height: number) {
   const area = width * height;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
@@ -118,7 +146,8 @@ function rules(mask: Uint8Array, width: number, height: number, horizontal: bool
   }
   // Broad dark stripes and solid blocks are not thin printed grid rules.
   const thin = merged.filter((rule) => rule.thickness <= MAX_STROKE_WIDTH);
-  return thin.length <= MAX_RULES ? thin : [];
+  if (thin.length > MAX_RULES) return [];
+  return horizontal ? mergeHorizontalAliases(thin) : thin;
 }
 
 /** Geometry-only local contrast: smooth illumination is not a printed rule. */
